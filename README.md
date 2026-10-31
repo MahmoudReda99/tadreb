@@ -101,3 +101,12 @@ Every day's slots add up to that day's hours, every subject's slots to its weekl
 * Offline behaviour is guaranteed by the service-worker precache (all JS, fonts, pdf.js worker, Tesseract worker/wasm/Arabic model, 37 entries);
   test it with `npm run build && npm run preview`, open once online, then switch to airplane mode.
 * OCR output on photographed pages is imperfect by nature — that is why low-confidence fields must be confirmed.
+
+## Deploying to Cloudflare Pages
+*Workers & Pages → Create → Pages → Connect to Git*, pick this repository, then:
+- Framework preset: None
+- Build command: `npm run build`
+- Build output directory: `dist`
+- `.node-version` (20) is read automatically.
+
+The site is a static PWA; once opened online it works offline (service worker over HTTPS).
