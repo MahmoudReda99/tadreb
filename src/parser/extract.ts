@@ -2,7 +2,11 @@
 import { scoreText } from './parse';
 import { decodeWord, readNumberCrop, referenceHeight } from './digits';
 
-export interface Extracted { text: string; confidence: number; source: 'docx' | 'pdf' | 'ocr' | 'pdf-ocr' | 'txt'; pages?: string[]; numbers?: string[] }
+export interface Extracted { text: string; confidence: number; source: 'docx' | 'pdf' | 'ocr' | 'pdf-ocr' | 'txt'; pages?: string[]; numbers?: string[]; errors?: string[] }
+
+/** phones have far less memory than a desktop: one OCR worker, and canvases are released as soon as they are used */
+const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const release = (...cs: HTMLCanvasElement[]) => cs.forEach(c => { c.width = 0; c.height = 0; });
 
 const base = import.meta.env.BASE_URL;
 type Worker = Awaited<ReturnType<typeof import('tesseract.js')['createWorker']>>;
@@ -101,6 +105,7 @@ export async function ocrPage(w: Worker, page: HTMLCanvasElement, progress?: (p:
   // Tesseract cannot read Arabic-Indic digits: re-read every number-shaped word with the glyph recognizer
   const refined = await refineNumbers(data.text, words, canvas);
   progress?.(1);
+  release(bw, small, canvas, page);
   return { text: refined.text, conf: Math.max(0.05, Math.min(1, data.confidence / 100)), numbers: refined.log };
 }
 
@@ -163,8 +168,9 @@ export async function refineNumbers(text: string, words: OcrWord[], bw: HTMLCanv
 }
 
 async function readPdf(file: File, onProgress?: (p: number) => void): Promise<Extracted> {
-  const pdfjs = await import('pdfjs-dist');
-  const worker = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+  // the legacy build runs on older iPhones (the modern one needs Promise.withResolvers, iOS 17.4+)
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const worker = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
   pdfjs.GlobalWorkerOptions.workerSrc = worker;
   const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
   let text = '';
@@ -184,28 +190,34 @@ async function readPdf(file: File, onProgress?: (p: number) => void): Promise<Ex
   if (text.replace(/\s/g, '').length > 200) return { text, confidence: 0.95, source: 'pdf' };
   // scanned PDF (e.g. CamScanner): render each page and OCR it, several pages at once
   const n = doc.numPages;
-  const lanes = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1, n));
+  const lanes = isMobile() ? 1 : Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1, n));
   const workers = await Promise.all(Array.from({ length: lanes }, () => newWorker()));
   try {
     const pages: string[] = new Array(n).fill('');
     const confs: number[] = new Array(n).fill(0);
     const prog: number[] = new Array(n).fill(0);
+    const errors: string[] = [];
     let next = 1;
     const lane = async (w: Worker) => {
       for (;;) {
         const i = next++;
         if (i > n) return;
-        const page = await doc.getPage(i);
-        const vp = page.getViewport({ scale: 3 });
-        const raw = document.createElement('canvas');
-        raw.width = vp.width; raw.height = vp.height;
-        await page.render({ canvasContext: raw.getContext('2d')!, viewport: vp }).promise;
-        const r = await ocrPage(w, toCanvas(raw, raw.width, raw.height), p => { prog[i - 1] = p; onProgress?.(prog.reduce((a, b) => a + b, 0) / n); });
-        pages[i - 1] = r.text; confs[i - 1] = r.conf;
+        try {
+          const page = await doc.getPage(i);
+          const vp = page.getViewport({ scale: 3 });
+          const raw = document.createElement('canvas');
+          raw.width = vp.width; raw.height = vp.height;
+          await page.render({ canvasContext: raw.getContext('2d')!, viewport: vp }).promise;
+          const big = toCanvas(raw, raw.width, raw.height);
+          release(raw);
+          const r = await ocrPage(w, big, p => { prog[i - 1] = p; onProgress?.(prog.reduce((a, b) => a + b, 0) / n); });
+          pages[i - 1] = r.text; confs[i - 1] = r.conf;
+        } catch (e) { errors.push(`الصفحة ${i}: ${e instanceof Error ? e.message : String(e)}`); }
       }
     };
     await Promise.all(workers.map(lane));
-    return { text: pages.join('\n'), pages, confidence: (confs.reduce((a, b) => a + b, 0) / n) * 0.9, source: 'pdf-ocr' };
+    if (errors.length === n) throw new Error(`تعذّرت قراءة الملف على هذا الجهاز (${errors[0]})`);
+    return { text: pages.join('\n'), pages, confidence: (confs.reduce((a, b) => a + b, 0) / n) * 0.9, source: 'pdf-ocr', errors };
   } finally { await Promise.all(workers.map(w => w.terminate())); }
 }
 

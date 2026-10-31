@@ -36,6 +36,9 @@ function Paper({ children }: { children: React.ReactNode }) {
   return <div className="paper-scroll" ref={box}><div className="paper on-screen" style={{ zoom: z }}>{children}</div></div>;
 }
 
+/** crypto.randomUUID needs iOS 15.4+ and https; fall back so an older phone never crashes */
+const uid = () => (globalThis.crypto?.randomUUID?.() ?? `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`);
+
 export default function App() {
   const [view, setView] = useState<View>('upload');
   const [tab, setTab] = useState<Tab>('agenda');
@@ -48,7 +51,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [audit, setAudit] = useState<Audit | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [pid, setPid] = useState<string>(() => crypto.randomUUID());
+  const [pid, setPid] = useState<string>(() => uid());
   const [exporting, setExporting] = useState(false);
   const online = useOnline();
 
@@ -70,13 +73,13 @@ export default function App() {
     try {
       const x = await extractText(f, p => setBusy({ label: 'التعرف الضوئى على النص العربى…', p }));
       const r = parseInstructions(x.text, x.source === 'docx' || x.source === 'txt' || x.source === 'pdf' ? x.confidence : Math.max(0.6, x.confidence));
-      setInst(r.instructions); setConf(r.conf); setNotes(r.notes); setRawText(x.source === 'docx' || x.source === 'txt' ? '' : x.text); setConfirmed(new Set());
-      setPid(crypto.randomUUID()); setView('review');
+      setInst(r.instructions); setConf(r.conf); setNotes([...(x.errors?.length ? [`تعذّرت قراءة بعض الصفحات على هذا الجهاز: ${x.errors.join(' — ')}`] : []), ...r.notes]); setRawText(x.source === 'docx' || x.source === 'txt' ? '' : x.text); setConfirmed(new Set());
+      setPid(uid()); setView('review');
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(null); }
   }
   function open(i: Instructions, id?: string) {
-    setInst(i); setConf({}); setNotes([]); setRawText(''); setConfirmed(new Set()); setPid(id ?? crypto.randomUUID()); setView('review');
+    setInst(i); setConf({}); setNotes([]); setRawText(''); setConfirmed(new Set()); setPid(id ?? uid()); setView('review');
   }
   async function accept() {
     await saveProject({ id: pid, name: inst.courseName || 'مشروع بدون اسم', instructions: inst, updatedAt: Date.now() }).catch(() => {});
