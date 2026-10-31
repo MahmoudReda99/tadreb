@@ -28,3 +28,6 @@ samples/
 _sonnet_draft/
 src/parser/__tests__/exam*.txt
 .claude/
+
+# Cloudflare
+.wrangler/
