@@ -1,7 +1,7 @@
 {
   // Cloudflare Workers static-assets deploy: publishes the Vite build (run `npm run build` first)
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "tadreb-agenda",
+  "name": "agenda",
   "compatibility_date": "2025-01-01",
   "assets": {
     "directory": "./dist",
