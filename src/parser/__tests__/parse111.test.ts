@@ -105,3 +105,11 @@ describe.skipIf(!existsSync(fOcr))('real OCR of the scanned course-111 PDF (afte
     expect(Object.values(r.conf).every(v => v < LOW)).toBe(true);
   });
 });
+
+describe('implausible march hours are rejected, not printed', () => {
+  it('flags a month whose numbers cannot be hours of one day', () => {
+    const r = parseInstructions(['الأجازات الرسمية :', 'أ - الشهر الأول 3 طابور سير + 4 أمن حربى .', 'ب - الشهر الثانى 431 طابور سير + 4410 أمن حربى .', 'ج - الشهر الثالث 5 طابور سير + 2 أمن حربى .'].join('\n'), 0.6);
+    expect(r.instructions.marchSecurityByMonth.slice(0, 3)).toEqual([[3, 4], [0, 0], [5, 2]]);
+    expect(r.notes.join(' ')).toMatch(/الشهر 2/);
+  });
+});

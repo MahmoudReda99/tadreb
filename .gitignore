@@ -31,3 +31,6 @@ src/parser/__tests__/exam*.txt
 
 # Cloudflare
 .wrangler/
+
+# temporary test copies of real exam files (delete this folder)
+public/_dbg/

@@ -1,6 +1,6 @@
 /** Reads the instructions page from a DOCX, a PDF or an image — fully offline. */
-import { scoreText } from './parse';
-import { decodeWord, readNumberCrop, referenceHeight } from './digits';
+import { parseInstructions, scoreText } from './parse';
+import { compactHeights, decodeWord, lineHeight, pageScript, readNumberCrop, referenceHeight, useScript, type Glyph } from './digits';
 
 export interface Extracted { text: string; confidence: number; source: 'docx' | 'pdf' | 'ocr' | 'pdf-ocr' | 'txt'; pages?: string[]; numbers?: string[]; errors?: string[] }
 
@@ -88,7 +88,7 @@ function shrink(src: HTMLCanvasElement, longSide: number): HTMLCanvasElement {
  * passes (only when the page does not already look like instructions), so a sideways table page no longer costs
  * extra full-size runs.
  */
-export async function ocrPage(w: Worker, page: HTMLCanvasElement, progress?: (p: number) => void): Promise<{ text: string; conf: number; numbers: string[] }> {
+export async function ocrPage(w: Worker, page: HTMLCanvasElement, progress?: (p: number) => void): Promise<PageRead> {
   const bw = binarize(page);
   const small = shrink(bw, 1100);
   const quick = async (c: HTMLCanvasElement) => scoreText((await w.recognize(c)).data.text);
@@ -102,20 +102,25 @@ export async function ocrPage(w: Worker, page: HTMLCanvasElement, progress?: (p:
   const { data } = await w.recognize(canvas, {}, { blocks: true });
   progress?.(0.85);
   const words = (data.words ?? (data.blocks ?? []).flatMap(b => b.paragraphs.flatMap(p => p.lines.flatMap(l => l.words)))) as OcrWord[];
-  // Tesseract cannot read Arabic-Indic digits: re-read every number-shaped word with the glyph recognizer
-  const refined = await refineNumbers(data.text, words, canvas);
+  const nums = await readNumbers(words, canvas); // glyph reads only; the digit family is decided later, over the whole document
   progress?.(1);
   release(bw, small, canvas, page);
-  return { text: refined.text, conf: Math.max(0.05, Math.min(1, data.confidence / 100)), numbers: refined.log };
+  return { text: data.text, conf: Math.max(0.05, Math.min(1, data.confidence / 100)), words, nums };
 }
+
+interface PageRead { text: string; conf: number; words: OcrWord[]; nums: NumberReads }
 
 interface OcrWord { text: string; bbox: { x0: number; y0: number; x1: number; y1: number } }
 
-export async function refineNumbers(text: string, words: OcrWord[], bw: HTMLCanvasElement): Promise<{ text: string; log: string[] }> {
-  const log: string[] = [];
+export interface NumberReads { groups: { idx: number[] }[]; read: Glyph[][] }
+
+/** find the number-shaped words of a page and read their glyphs (no decision about the digit family yet) */
+export async function readNumbers(words: OcrWord[], bw: HTMLCanvasElement): Promise<NumberReads> {
   const clean = (t: string) => t.replace(/[\u200e\u200f\u202a-\u202e]/g, '');
   const numeric = (w: OcrWord) => {
     const t = clean(w.text).trim();
+    // a single stray symbol (”  ©  ؟) is usually a digit Tesseract could not read — but plain punctuation is not
+    if (t && t.length <= 3 && !/[\u0621-\u064aA-Za-z0-9٠-٩]/.test(t) && /[^.,،:;+\-–—_()[\]/\s'"`]/.test(t)) return true;
     if (!t || !/[0-9٠-٩۰-۹/()]/.test(t)) return false;
     const letters = (t.match(/[\u0621-\u064a]/g) ?? []).length;
     const slashes = (t.match(/\//g) ?? []).length;
@@ -143,19 +148,34 @@ export async function refineNumbers(text: string, words: OcrWord[], bw: HTMLCanv
     crop.getContext('2d')!.drawImage(bw, cx0, cy0, cw, ch, 0, 0, cw, ch);
     return crop;
   });
-  const Href = referenceHeight(crops);
-  const replace = new Map<number, string>(); // word index -> replacement
+  const Href = referenceHeight(crops); // page-level fallback
+  const heights = crops.map(compactHeights);
+  const read: Glyph[][] = [];
   for (let gi = 0; gi < groups.length; gi++) {
-    const g = groups[gi];
-    const gs = await readNumberCrop(crops[gi], Href);
-    if (!gs.some(x => x.kind === 'digit')) continue;
+    // numbers on one text line share a font size: judge the digit height from the whole line when it has enough glyphs
+    const mid = (groups[gi].box.y0 + groups[gi].box.y1) / 2; const span = groups[gi].box.y1 - groups[gi].box.y0;
+    const sameLine = groups.flatMap((g, j) => (Math.abs((g.box.y0 + g.box.y1) / 2 - mid) < Math.max(span, 14) * 0.6 ? heights[j] : []));
+    read.push(await readNumberCrop(crops[gi], lineHeight(sameLine) || Href));
+  }
+  release(...crops);
+  return { groups: groups.map(g => ({ idx: g.idx })), read };
+}
+
+/** put the glyph readings into the OCR text, in reading order */
+export function applyNumbers(text: string, words: OcrWord[], nums: NumberReads, script: 'indic' | 'latin'): { text: string; log: string[] } {
+  const log: string[] = [];
+  if (script === 'latin') return { text, log };
+  const clean = (t: string) => t.replace(/[\u200e\u200f\u202a-\u202e]/g, '');
+  const replace = new Map<number, string>(); // word index -> replacement
+  nums.groups.forEach((g, gi) => {
+    const gs = useScript(nums.read[gi], script);
+    if (!gs.some(x => x.kind === 'digit')) return;
     const raw = g.idx.map(i => clean(words[i].text)).join(' ');
     const fixed = decodeWord(gs, raw);
-    if (!fixed) continue;
+    if (!fixed) return;
     log.push(`${raw} -> ${fixed}`);
     g.idx.forEach((wi, k) => replace.set(wi, k === 0 ? ' ' + fixed + ' ' : ''));
-  }
-  // rebuild the text, walking the words in reading order
+  });
   let out = ''; let cur = 0;
   words.forEach((w, i) => {
     const at = text.indexOf(w.text, cur);
@@ -166,6 +186,48 @@ export async function refineNumbers(text: string, words: OcrWord[], bw: HTMLCanv
   out += text.slice(cur);
   return { text: out, log };
 }
+
+/** OCR many pages at once (one worker on phones); every page is a lazily produced canvas */
+async function ocrMany(n: number, getCanvas: (i: number) => Promise<HTMLCanvasElement>, onProgress?: (p: number) => void) {
+  const lanes = isMobile() ? 1 : Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1, n));
+  const workers = await Promise.all(Array.from({ length: lanes }, () => newWorker()));
+  try {
+    const reads: (PageRead | null)[] = new Array(n).fill(null);
+    const pages: string[] = new Array(n).fill('');
+    const confs: number[] = new Array(n).fill(0);
+    const prog: number[] = new Array(n).fill(0);
+    const errors: string[] = [];
+    const numbers: string[] = [];
+    let next = 0;
+    const lane = async (w: Worker) => {
+      for (;;) {
+        const i = next++;
+        if (i >= n) return;
+        try {
+          const big = await getCanvas(i);
+          const r = await ocrPage(w, big, p => { prog[i] = p; onProgress?.(prog.reduce((a, b) => a + b, 0) / n); });
+          reads[i] = r; confs[i] = r.conf;
+        } catch (e) { errors.push(`الصفحة ${i + 1}: ${e instanceof Error ? e.message : String(e)}`); }
+      }
+    };
+    await Promise.all(workers.map(lane));
+    if (errors.length === n) throw new Error(`تعذّرت قراءة الملف على هذا الجهاز (${errors[0]})`);
+    // one decision for the whole document: Arabic-Indic digits (read by shape) or ordinary digits (left to Tesseract)
+    const script = pageScript(reads.flatMap(r => (r ? r.nums.read : [])));
+    reads.forEach((r, i) => {
+      if (!r) return;
+      const a = applyNumbers(r.text, r.words, r.nums, script);
+      pages[i] = a.text; numbers.push(...a.log);
+    });
+    return { pages, confidence: (confs.reduce((a, b) => a + b, 0) / n) * 0.9, errors, numbers };
+  } finally { await Promise.all(workers.map(w => w.terminate())); }
+}
+
+/** a text layer is trusted only if it really reads as the instructions; Arabic PDFs made by Word often hold garbage */
+const textLooksUsable = (t: string) => {
+  const r = parseInstructions(t);
+  return (r.conf.startSaturday ?? 0) >= 0.9 && (r.conf.holidays ?? 0) >= 0.5; // the period line and the holiday list must really be readable
+};
 
 async function readPdf(file: File, onProgress?: (p: number) => void): Promise<Extracted> {
   // the legacy build runs on older iPhones (the modern one needs Promise.withResolvers, iOS 17.4+)
@@ -187,41 +249,34 @@ async function readPdf(file: File, onProgress?: (p: number) => void): Promise<Ex
     }
     text += line + '\n';
   }
-  if (text.replace(/\s/g, '').length > 200) return { text, confidence: 0.95, source: 'pdf' };
-  // scanned PDF (e.g. CamScanner): render each page and OCR it, several pages at once
+  if (text.replace(/\s/g, '').length > 200 && textLooksUsable(text)) return { text, confidence: 0.95, source: 'pdf' };
+  // scanned PDF (CamScanner…) or a PDF whose text layer is unreadable: render each page and OCR it
   const n = doc.numPages;
-  const lanes = isMobile() ? 1 : Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1, n));
-  const workers = await Promise.all(Array.from({ length: lanes }, () => newWorker()));
-  try {
-    const pages: string[] = new Array(n).fill('');
-    const confs: number[] = new Array(n).fill(0);
-    const prog: number[] = new Array(n).fill(0);
-    const errors: string[] = [];
-    let next = 1;
-    const lane = async (w: Worker) => {
-      for (;;) {
-        const i = next++;
-        if (i > n) return;
-        try {
-          const page = await doc.getPage(i);
-          const vp = page.getViewport({ scale: 3 });
-          const raw = document.createElement('canvas');
-          raw.width = vp.width; raw.height = vp.height;
-          await page.render({ canvasContext: raw.getContext('2d')!, viewport: vp }).promise;
-          const big = toCanvas(raw, raw.width, raw.height);
-          release(raw);
-          const r = await ocrPage(w, big, p => { prog[i - 1] = p; onProgress?.(prog.reduce((a, b) => a + b, 0) / n); });
-          pages[i - 1] = r.text; confs[i - 1] = r.conf;
-        } catch (e) { errors.push(`الصفحة ${i}: ${e instanceof Error ? e.message : String(e)}`); }
-      }
-    };
-    await Promise.all(workers.map(lane));
-    if (errors.length === n) throw new Error(`تعذّرت قراءة الملف على هذا الجهاز (${errors[0]})`);
-    return { text: pages.join('\n'), pages, confidence: (confs.reduce((a, b) => a + b, 0) / n) * 0.9, source: 'pdf-ocr', errors };
-  } finally { await Promise.all(workers.map(w => w.terminate())); }
+  const r = await ocrMany(n, async i => {
+    const page = await doc.getPage(i + 1);
+    const vp = page.getViewport({ scale: 3 });
+    const raw = document.createElement('canvas');
+    raw.width = vp.width; raw.height = vp.height;
+    await page.render({ canvasContext: raw.getContext('2d')!, viewport: vp }).promise;
+    const big = toCanvas(raw, raw.width, raw.height);
+    release(raw);
+    return big;
+  }, onProgress);
+  return { text: r.pages.join('\n'), pages: r.pages, confidence: r.confidence, source: 'pdf-ocr', errors: r.errors, numbers: r.numbers };
 }
 
-export async function extractText(file: File, onProgress?: (p: number) => void): Promise<Extracted> {
+/** several photos of the pages of one document, in the order given */
+async function readImages(files: File[], onProgress?: (p: number) => void): Promise<Extracted> {
+  const r = await ocrMany(files.length, async i => {
+    const bmp = await createImageBitmap(files[i]);
+    const c = toCanvas(bmp, bmp.width, bmp.height);
+    bmp.close?.();
+    return c;
+  }, onProgress);
+  return { text: r.pages.join('\n'), pages: r.pages, confidence: r.confidence, source: 'ocr', errors: r.errors, numbers: r.numbers };
+}
+
+async function readOne(file: File, onProgress?: (p: number) => void): Promise<Extracted> {
   const name = file.name.toLowerCase();
   if (name.endsWith('.docx')) {
     const mammoth = await import('mammoth');
@@ -229,14 +284,24 @@ export async function extractText(file: File, onProgress?: (p: number) => void):
     return { text: r.value, confidence: 1, source: 'docx' };
   }
   if (name.endsWith('.pdf') || file.type === 'application/pdf') return readPdf(file, onProgress);
-  if (file.type.startsWith('image/')) {
-    const bmp = await createImageBitmap(file);
-    const w = await newWorker();
-    try {
-      const r = await ocrPage(w, toCanvas(bmp, bmp.width, bmp.height), onProgress);
-      return { text: r.text, confidence: r.conf * 0.9, source: 'ocr', pages: [r.text], numbers: r.numbers };
-    } finally { await w.terminate(); }
-  }
   if (name.endsWith('.txt')) return { text: await file.text(), confidence: 1, source: 'txt' };
   throw new Error('نوع الملف غير مدعوم — استخدم DOCX أو PDF أو صورة');
+}
+
+/** one or many files (pages) -> one text, in the order given */
+export async function extractText(input: File | File[], onProgress?: (p: number) => void): Promise<Extracted> {
+  const files = Array.isArray(input) ? input : [input];
+  if (!files.length) throw new Error('لم يتم اختيار أى ملف');
+  if (files.every(f => f.type.startsWith('image/'))) return readImages(files, onProgress);
+  const parts: Extracted[] = [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    parts.push(f.type.startsWith('image/') ? await readImages([f]) : await readOne(f, p => onProgress?.((i + p) / files.length)));
+  }
+  if (parts.length === 1) return parts[0];
+  return {
+    text: parts.map(x => x.text).join('\n'), pages: parts.flatMap(x => x.pages ?? [x.text]),
+    confidence: Math.min(...parts.map(x => x.confidence)), source: parts.some(x => x.source.includes('ocr')) ? 'pdf-ocr' : parts[0].source,
+    errors: parts.flatMap(x => x.errors ?? []),
+  };
 }

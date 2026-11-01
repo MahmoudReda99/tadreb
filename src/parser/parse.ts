@@ -110,7 +110,7 @@ export function parseInstructions(raw: string, ocrConfidence = 1): ParseResult {
   const notes: string[] = [];
   const base = 0.95 * ocrConfidence;
   const set = (k: string, c: number) => { conf[k] = Math.min(base, c * ocrConfidence); };
-  const lines = raw.split(/\r?\n/).map(norm).filter(Boolean);
+  const lines = raw.split(/\r?\n/).map(norm).map(l => l.replace(/\b(20\d\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/g, '$1/$2/$3')).filter(Boolean); // yyyymmdd lost its slashes
   const text = lines.join('\n');
   const miss = (k: string, why: string) => { set(k, 0.2); notes.push(why); };
 
@@ -257,15 +257,23 @@ export function parseInstructions(raw: string, ocrConfidence = 1): ParseResult {
 
   // --- march Saturday / military security
   const pairs: [number, number][] = [];
+  const partial: number[] = [];
   let found = 0; let maxIdx = -1;
   for (const l of lines) {
     const m = l.match(new RegExp(`الشهر\\s*${ORD_RE}(.*)$`));
     if (!m || !/طابور|سير|حربي/.test(m[2])) continue;
-    const nums = [...m[2].matchAll(/\d+/g)].map(x => +x[0]);
-    if (!nums.length) continue;
+    // the number written before «طابور سير» is the march hours, the one before «أمن حربى» the security hours;
+    // a number that was not read stays 0 instead of letting the other one slide into its place
+    const march = m[2].match(/(\d+)\s*[)\]]?\s*(?:ساعه\s*)?طابور/);
+    const sec = m[2].match(/(\d+)\s*[)\]]?\s*(?:ساعه\s*)?(?:امن\s*)+حربي/);
+    if (!march && !sec) continue;
+    const dashed = (word: RegExp) => new RegExp(`[(\\[]?\\s*[-–]\\s*[)\\]]?\\s*(?:ساعه\\s*)?${word.source}`).test(m[2]); // "(-)" means an explicit zero
+    // a day has 7 hours: a bracket glyph read as a leading 1 makes (13) of (3); anything still above 7 is a misread
+    const fix = (n: number): number | null => (n <= 7 ? n : n < 20 && n % 10 <= 7 ? n % 10 : null);
+    const mv = march ? fix(+march[1]) : null; const sv = sec ? fix(+sec[1]) : null;
     const i = ORD[m[1]] - 1;
-    const fix = (n: number) => (n > 7 && n < 20 ? n % 10 : n); // a bracket glyph read as a leading 1: (13) is (3)
-    pairs[i] = [fix(nums[0]), nums.length > 1 ? fix(nums[1]) : 0];
+    pairs[i] = [mv ?? 0, sv ?? 0];
+    if ((mv === null && !dashed(/طابور/)) || (sv === null && !dashed(/(?:امن\s*)+حربي/))) { partial.push(i + 1); }
     found++; maxIdx = Math.max(maxIdx, i);
   }
   const repeats = /يكرر\s*الشهر/.test(text);
@@ -278,6 +286,7 @@ export function parseInstructions(raw: string, ocrConfidence = 1): ParseResult {
       mc = Math.min(mc, repeats && src ? 0.8 : 0.3);
     }
   }
+  if (partial.length) { mc = Math.min(mc, 0.5); notes.push(`ساعات طابور السير أو الأمن الحربى غير مقروءة بالكامل فى الشهر ${partial.join('، ')} — راجعها`); }
   if (repeats) notes.push('الأشهر الزائدة تكرر الأشهر الأولى (كما ورد: «يكرر الشهر الخامس والسادس»)');
   if (!found) notes.push('لم تُقرأ ساعات طابور السير والأمن الحربى');
   inst.marchSecurityByMonth = pairs.slice(0, inst.weeksPerMonth.length);
@@ -360,4 +369,11 @@ export function scoreText(raw: string): number {
   for (const re of [/الفتره التدريبيه/, /مهام العمليات/, /الاحتياط/, /الاجازات/, /رمضان/, /طابور/, /مستوي الفرد/, /تكتيك/, /الموضوع/]) if (re.test(t)) s += 2;
   s += (t.match(/[؀-ۿ]{3,}/g)?.length ?? 0) / 20;
   return s;
+}
+
+const ANCHORS = [/ال[فق][تق]ره\s*التدريبيه/, /مهام\s*العمليات/, /الاحتياط/, /الاجازات\s*الرسميه/, /رمضان/, /طابور\s*السير/, /مستوي\s*الفرد/, /التحضيريه/];
+/** how many of the fixed phrases of the instructions page are present — a garbled text layer has almost none */
+export function anchorCount(raw: string): number {
+  const t = raw.split(/\r?\n/).map(norm).join('\n');
+  return ANCHORS.filter(a => a.test(t)).length;
 }

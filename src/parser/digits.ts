@@ -4,11 +4,12 @@
  * glyphs (connected components) and matched against the ten digit shapes rendered from bundled fonts.
  */
 const GLYPHS = '٠١٢٣٤٥٦٧٨٩';
+const LATIN = '0123456789';
 const N = 16; // feature grid
 
 export interface Box { x0: number; y0: number; x1: number; y1: number }
 interface Comp { box: Box; w: number; h: number; mask: Uint8Array; area: number }
-interface Template { ch: string; f: Float32Array; aspect: number }
+interface Template { ch: string; f: Float32Array; aspect: number; script: 'indic' | 'latin' }
 
 let templates: Template[] | null = null;
 
@@ -55,7 +56,8 @@ async function loadTemplates(): Promise<Template[]> {
   const out: Template[] = [];
   const seen = new Set<string>();
   for (const font of FONTS) for (const weight of ['400', '700']) for (const blur of [0, 1]) {
-    for (const ch of GLYPHS) {
+    for (const ch of GLYPHS + LATIN) {
+      const script = GLYPHS.includes(ch) ? 'indic' as const : 'latin' as const;
       const c = document.createElement('canvas'); c.width = 120; c.height = 140;
       const g = c.getContext('2d')!;
       g.fillStyle = '#fff'; g.fillRect(0, 0, 120, 140);
@@ -73,10 +75,10 @@ async function loadTemplates(): Promise<Template[]> {
       }
       const t = tightMask(c);
       if (!t || t.w < 3 || t.h < 3) continue;
-      const key = ch + ':' + t.w + 'x' + t.h + ':' + t.mask.reduce((a, b) => a + b, 0);
+      const key = script + ch + ':' + t.w + 'x' + t.h + ':' + t.mask.reduce((a, b) => a + b, 0);
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ ch, f: feature(t.mask, t.w, t.h), aspect: t.w / t.h });
+      out.push({ ch: script === 'latin' ? String.fromCharCode(0x660 + +ch) : ch, f: feature(t.mask, t.w, t.h), aspect: t.w / t.h, script });
     }
   }
   templates = out;
@@ -117,7 +119,7 @@ function components(c: HTMLCanvasElement): Comp[] {
   return comps;
 }
 
-export interface Glyph { x: number; x1: number; w: number; h: number; ch: string; alts: { ch: string; score: number }[]; kind: 'digit' | 'slash' | 'dash' | 'paren' | 'noise' }
+export interface Glyph { x: number; x1: number; w: number; h: number; byScript?: { indic: { ch: string; score: number }[]; latin: { ch: string; score: number }[] }; ch: string; alts: { ch: string; score: number }[]; kind: 'digit' | 'slash' | 'dash' | 'paren' | 'noise' }
 
 /** classify the glyphs of one number-shaped word (left-to-right, as printed) */
 /** digit height of a whole page: lower tercile of the compact components that are not tiny dots */
@@ -130,6 +132,53 @@ export function referenceHeight(crops: HTMLCanvasElement[]): number {
   return big[Math.floor(big.length * 0.35)] ?? 0;
 }
 
+/** heights of the compact components of a crop (digits, slashes, brackets — not specks or letter blobs) */
+export function compactHeights(crop: HTMLCanvasElement): number[] {
+  return components(crop).filter(k => k.area >= 6 && k.w <= k.h * 1.6 && k.h < 90).map(k => k.h);
+}
+
+/** digit height of one text line: the commonest height (digits outnumber the taller slashes and brackets); 0 when there is too little to judge */
+export function lineHeight(hs: number[]): number {
+  if (hs.length < 8) return 0;
+  const sorted = [...hs].sort((x, y) => x - y);
+  const p90 = sorted[Math.floor(sorted.length * 0.9)];
+  const big = hs.filter(h => h >= p90 * 0.55);
+  const count = new Map<number, number>();
+  big.forEach(h => count.set(h, (count.get(h) ?? 0) + 1));
+  let best = 0; let bestN = -1;
+  for (const h of count.keys()) { const n = (count.get(h - 1) ?? 0) + (count.get(h) ?? 0) + (count.get(h + 1) ?? 0); if (n > bestN || (n === bestN && h < best)) { bestN = n; best = h; } }
+  return best;
+}
+
+/** two glyphs that touch (a slash against a digit, or two digits) form one wide blob: cut it at its thinnest columns */
+function splitWide(c: Comp, H: number): Comp[] {
+  // only blobs taller than a digit are a slash glued to a digit; two glued plain digits are rarer and risky to cut
+  if (c.w <= H * 1.05 || c.w > H * 2.2 || c.h < H * 1.12) return [c];
+  const pieces = Math.max(2, Math.min(3, Math.round(c.w / (0.62 * H))));
+  const ink = new Array<number>(c.w).fill(0);
+  for (let y = 0; y < c.h; y++) for (let x = 0; x < c.w; x++) if (c.mask[y * c.w + x]) ink[x]++;
+  const cuts: number[] = [];
+  for (let k = 1; k < pieces; k++) {
+    const mid = Math.round((c.w * k) / pieces);
+    let bx = mid; let bv = Infinity;
+    for (let x = Math.max(cuts[k - 2] ?? 0, mid - Math.round(c.w * 0.18)) + 1; x < Math.min(c.w - 1, mid + Math.round(c.w * 0.18)); x++) if (ink[x] < bv) { bv = ink[x]; bx = x; }
+    cuts.push(bx);
+  }
+  const edges = [0, ...cuts, c.w];
+  const out: Comp[] = [];
+  for (let i = 0; i < edges.length - 1; i++) {
+    const x0 = edges[i]; const x1 = edges[i + 1];
+    let ymin = c.h, ymax = -1, area = 0;
+    for (let y = 0; y < c.h; y++) for (let x = x0; x < x1; x++) if (c.mask[y * c.w + x]) { if (y < ymin) ymin = y; if (y > ymax) ymax = y; area++; }
+    if (ymax < 0 || area < 6) continue;
+    const w = x1 - x0; const h = ymax - ymin + 1;
+    const mask = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) mask[y * w + x] = c.mask[(y + ymin) * c.w + x0 + x];
+    out.push({ box: { x0: c.box.x0 + x0, x1: c.box.x0 + x1 - 1, y0: c.box.y0 + ymin, y1: c.box.y0 + ymax }, w, h, mask, area });
+  }
+  return out.length ? out : [c];
+}
+
 export async function readNumberCrop(crop: HTMLCanvasElement, Href = 0): Promise<Glyph[]> {
   const T = await loadTemplates();
   let comps = components(crop).filter(c => c.area >= 6);
@@ -138,7 +187,7 @@ export async function readNumberCrop(crop: HTMLCanvasElement, Href = 0): Promise
   const compact = comps.filter(c => c.w <= c.h * 1.6);
   const hs = (compact.length ? compact : comps).map(c => c.h).sort((a, b) => a - b);
   const H = Href || hs[Math.min(hs.length - 1, Math.floor(hs.length * 0.55))];
-  comps = comps.filter(c => c.h <= H * 1.9);
+  comps = comps.filter(c => c.h <= H * 1.9).flatMap(c => splitWide(c, H));
   comps.sort((a, b) => a.box.x0 - b.box.x0);
   // digit zero is a dot at mid-height of the digit line; full stops, colons and letter dots sit elsewhere
   const tall = comps.filter(c => c.h >= H * 0.8).map(c => (c.box.y0 + c.box.y1) / 2).sort((a, b) => a - b);
@@ -157,18 +206,32 @@ export async function readNumberCrop(crop: HTMLCanvasElement, Href = 0): Promise
     if (c.h >= H * 1.35 && asp < 0.7) { out.push(mk(c, '(', 'paren')); continue; } // bracket
     if (c.h >= H * 1.1 && asp < 0.7) { out.push(mk(c, '/', 'slash')); continue; } // slash is a little taller than a digit
     const f = feature(c.mask, c.w, c.h);
-    const best = new Map<string, number>();
+    const best = { indic: new Map<string, number>(), latin: new Map<string, number>() };
     for (const t of T) {
       let dot = 0;
       for (let i = 0; i < f.length; i++) dot += f[i] * t.f[i];
       const ar = Math.abs(Math.log((asp + 0.05) / (t.aspect + 0.05)));
       const sc = dot - 0.25 * ar;
-      if (sc > (best.get(t.ch) ?? -9)) best.set(t.ch, sc);
+      const m = best[t.script];
+      if (sc > (m.get(t.ch) ?? -9)) m.set(t.ch, sc);
     }
-    const alts = [...best.entries()].map(([ch, score]) => ({ ch, score })).sort((a, b) => b.score - a.score);
-    out.push(mk(c, alts[0].ch, 'digit', alts.slice(0, 3)));
+    const rank = (m: Map<string, number>) => [...m.entries()].map(([ch, score]) => ({ ch, score })).sort((a, b) => b.score - a.score).slice(0, 3);
+    const byScript = { indic: rank(best.indic), latin: rank(best.latin) };
+    const g = mk(c, byScript.indic[0].ch, 'digit', byScript.indic);
+    g.byScript = byScript;
+    out.push(g);
   }
   return out.filter(g => g.kind !== 'noise');
+}
+
+/** which digit shapes does this page use? compare how well the glyphs match each family (dot-zeros are Arabic-Indic by construction and ignored) */
+export function pageScript(all: Glyph[][]): 'indic' | 'latin' {
+  let si = 0, sl = 0, n = 0;
+  for (const gs of all) for (const g of gs) if (g.kind === 'digit' && g.byScript) { si += g.byScript.indic[0].score; sl += g.byScript.latin[0].score; n++; }
+  return n && sl > si ? 'latin' : 'indic';
+}
+export function useScript(gs: Glyph[], script: 'indic' | 'latin'): Glyph[] {
+  return gs.map(g => (g.byScript ? { ...g, alts: g.byScript[script], ch: g.byScript[script][0].ch } : g));
 }
 
 const toAscii = (s: string) => s.replace(/[٠-٩]/g, c => String(c.charCodeAt(0) - 0x660));
@@ -253,6 +316,19 @@ export function decodeWord(gs: Glyph[], raw: string): string {
         }
         dates.push(dt); i += 10; any = true;
       } else i++;
+    }
+    // thin slashes are sometimes lost: eight digits in a row are yyyymmdd or ddmmyyyy
+    for (let j = 0; !any && j + 8 <= grp.length; j++) {
+      const w8 = grp.slice(j, j + 8);
+      if (!w8.every(x => x.kind === 'digit')) continue;
+      const mkSlash = (at: number): Glyph => ({ ...w8[at], ch: '/', kind: 'slash', alts: [] });
+      for (const seps of [[4, 6], [2, 4]]) {
+        const v: Glyph[] = [];
+        w8.forEach((x, k) => { if (seps.includes(k)) v.push(mkSlash(k)); v.push(x); });
+        const dt = decodeDate(v);
+        if (dt) { dates.push(dt); any = true; break; }
+      }
+      if (any) break;
     }
     if (any) continue;
     // brackets (taller than digits) mark a week number, e.g. (27)
