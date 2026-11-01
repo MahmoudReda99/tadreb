@@ -13,15 +13,21 @@ interface Template { ch: string; f: Float32Array; aspect: number; script: 'indic
 
 let templates: Template[] | null = null;
 
-/** canvas -> N×N feature (glyph scaled to fit, centred) */
+// Safari caps the total memory of all canvases and only frees them at garbage collection, so the few
+// canvases this module needs are created once and reused (thousands of throw-away canvases blank out on iPhone).
+let scratchBig: HTMLCanvasElement | null = null;
+let scratchSmall: HTMLCanvasElement | null = null;
+const big = () => (scratchBig ??= document.createElement('canvas'));
+const small = () => { if (!scratchSmall) { scratchSmall = document.createElement('canvas'); scratchSmall.width = N; scratchSmall.height = N; } return scratchSmall; };
+
+/** mask -> N×N feature (glyph scaled to fit, centred) */
 function feature(mask: Uint8Array, w: number, h: number): Float32Array {
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const g = c.getContext('2d')!;
+  const c = big(); c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true })!;
   const img = g.createImageData(w, h);
   for (let i = 0; i < w * h; i++) { const v = mask[i] ? 0 : 255; img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255; }
   g.putImageData(img, 0, 0);
-  const s = document.createElement('canvas'); s.width = N; s.height = N;
-  const sg = s.getContext('2d')!;
+  const sg = small().getContext('2d', { willReadFrequently: true })!;
   sg.fillStyle = '#fff'; sg.fillRect(0, 0, N, N);
   const k = (N - 2) / Math.max(w, h);
   const dw = w * k; const dh = h * k;
@@ -55,11 +61,13 @@ async function loadTemplates(): Promise<Template[]> {
   try { await Promise.all([document.fonts.load('400 80px Cairo', GLYPHS), document.fonts.load('700 80px Cairo', GLYPHS)]); } catch { /* fonts optional */ }
   const out: Template[] = [];
   const seen = new Set<string>();
+  const tplCanvas = document.createElement('canvas');
   for (const font of FONTS) for (const weight of ['400', '700']) for (const blur of [0, 1]) {
     for (const ch of GLYPHS + LATIN) {
       const script = GLYPHS.includes(ch) ? 'indic' as const : 'latin' as const;
-      const c = document.createElement('canvas'); c.width = 120; c.height = 140;
-      const g = c.getContext('2d')!;
+      const c = tplCanvas; c.width = 120; c.height = 140; // resizing clears it
+      const g = c.getContext('2d', { willReadFrequently: true })!;
+      g.filter = 'none';
       g.fillStyle = '#fff'; g.fillRect(0, 0, 120, 140);
       g.fillStyle = '#000'; g.font = `${weight} 90px "${font}"`; g.textBaseline = 'middle'; g.textAlign = 'center';
       if (blur) g.filter = 'blur(1.2px)';

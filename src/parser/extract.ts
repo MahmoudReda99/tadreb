@@ -2,7 +2,7 @@
 import { parseInstructions, scoreText } from './parse';
 import { compactHeights, decodeWord, lineHeight, pageScript, readNumberCrop, referenceHeight, useScript, type Glyph } from './digits';
 
-export interface Extracted { text: string; confidence: number; source: 'docx' | 'pdf' | 'ocr' | 'pdf-ocr' | 'txt'; pages?: string[]; numbers?: string[]; errors?: string[] }
+export interface Extracted { text: string; confidence: number; source: 'docx' | 'pdf' | 'ocr' | 'pdf-ocr' | 'txt'; pages?: string[]; numbers?: string[]; errors?: string[]; report?: string }
 
 /** phones have far less memory than a desktop: one OCR worker, and canvases are released as soon as they are used */
 const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -95,7 +95,8 @@ export async function ocrPage(w: Worker, page: HTMLCanvasElement, progress?: (p:
   let canvas = bw;
   const s0 = await quick(small); progress?.(0.15);
   if (s0 < 5) {
-    const s90 = await quick(rotate(small, 90)); const s270 = await quick(rotate(small, 270)); progress?.(0.3);
+    const r90 = rotate(small, 90); const s90 = await quick(r90); release(r90);
+    const r270 = rotate(small, 270); const s270 = await quick(r270); release(r270); progress?.(0.3);
     const best = Math.max(s90, s270);
     if (best > s0 + 1) canvas = rotate(bw, s90 >= s270 ? 90 : 270);
   }
@@ -219,7 +220,7 @@ async function ocrMany(n: number, getCanvas: (i: number) => Promise<HTMLCanvasEl
       const a = applyNumbers(r.text, r.words, r.nums, script);
       pages[i] = a.text; numbers.push(...a.log);
     });
-    return { pages, confidence: (confs.reduce((a, b) => a + b, 0) / n) * 0.9, errors, numbers };
+    return { pages, confidence: (confs.reduce((a, b) => a + b, 0) / n) * 0.9, errors, numbers, report: `الصفحات: ${n - errors.length}/${n} · الأرقام المقروءة بالشكل: ${numbers.length} · نوع الأرقام: ${script === 'latin' ? 'عادية' : 'هندية'} · ${isMobile() ? 'جهاز محمول' : 'حاسوب'}` };
   } finally { await Promise.all(workers.map(w => w.terminate())); }
 }
 
@@ -262,7 +263,7 @@ async function readPdf(file: File, onProgress?: (p: number) => void): Promise<Ex
     release(raw);
     return big;
   }, onProgress);
-  return { text: r.pages.join('\n'), pages: r.pages, confidence: r.confidence, source: 'pdf-ocr', errors: r.errors, numbers: r.numbers };
+  return { text: r.pages.join('\n'), pages: r.pages, confidence: r.confidence, source: 'pdf-ocr', errors: r.errors, numbers: r.numbers, report: r.report };
 }
 
 /** several photos of the pages of one document, in the order given */
@@ -273,7 +274,7 @@ async function readImages(files: File[], onProgress?: (p: number) => void): Prom
     bmp.close?.();
     return c;
   }, onProgress);
-  return { text: r.pages.join('\n'), pages: r.pages, confidence: r.confidence, source: 'ocr', errors: r.errors, numbers: r.numbers };
+  return { text: r.pages.join('\n'), pages: r.pages, confidence: r.confidence, source: 'ocr', errors: r.errors, numbers: r.numbers, report: r.report };
 }
 
 async function readOne(file: File, onProgress?: (p: number) => void): Promise<Extracted> {

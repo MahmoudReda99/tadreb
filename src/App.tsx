@@ -92,7 +92,7 @@ export default function App() {
     try {
       const x = await extractText(files, p => setBusy({ label: 'التعرف الضوئى على النص العربى…', p }));
       const r = parseInstructions(x.text, x.source === 'docx' || x.source === 'txt' || x.source === 'pdf' ? x.confidence : Math.max(0.6, x.confidence));
-      setInst(r.instructions); setConf(r.conf); setNotes([...(x.errors?.length ? [`تعذّرت قراءة بعض الصفحات على هذا الجهاز: ${x.errors.join(' — ')}`] : []), ...r.notes]); setRawText(x.source === 'docx' || x.source === 'txt' ? '' : x.text); setConfirmed(new Set());
+      setInst(r.instructions); setConf(r.conf); setNotes([...(x.errors?.length ? [`تعذّرت قراءة بعض الصفحات على هذا الجهاز: ${x.errors.join(' — ')}`] : []), ...r.notes, ...(x.report ? [`ملخص القراءة — ${x.report}`] : [])]); setRawText(x.source === 'docx' || x.source === 'txt' ? '' : x.text); setConfirmed(new Set());
       setPid(uid()); setView('review');
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(null); }
