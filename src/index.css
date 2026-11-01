@@ -145,3 +145,13 @@ h1, h2, h3 { margin: 0; }
 .tray .mini:disabled { opacity: .35; }
 
 .warn { color: #ffb86b; font-size: .85rem; }
+
+.ok { color: var(--green); font-size: .85rem; }
+.hol { display: grid; gap: 10px; }
+.hol-row { display: grid; grid-template-columns: 28px 1fr 1fr auto; gap: 8px; align-items: start; padding: 8px; border: 1px dashed var(--line); border-radius: 10px; }
+.hol-row .no { width: 28px; height: 28px; border-radius: 50%; background: var(--gold); color: #1a1500; font-weight: 700; display: grid; place-items: center; margin-top: 18px; }
+.hol-row > small { grid-column: 2 / -1; }
+.hol-row .mini { margin-top: 18px; }
+.hol-row small { color: var(--muted); display: block; }
+.hol-row small.warn { color: #ffb86b; } .hol-row small.ok { color: var(--green); }
+@media (max-width: 600px) { .hol-row { grid-template-columns: 28px 1fr; } .hol-row .mini { grid-column: 2; margin-top: 0; justify-self: start; } }

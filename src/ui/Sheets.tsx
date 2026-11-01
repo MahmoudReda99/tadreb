@@ -2,7 +2,7 @@ import type { AgendaResult, DistributionResult, Instructions, LinkingResult, Sub
 import { ALL_KEYS, GENERAL_KEYS, MAIN_KEYS, SUBJECT_AR, SUBJECT_SHORT } from '../engine/types';
 import { DAYS_AR, addDays, dm, monthNames, parseDate } from '../engine/dates';
 import { auditDay, auditLink, auditSubject, auditSum, type Audit } from '../engine/audit';
-import { ar, h, KIND_COLORS, LEVEL_SWATCH } from './format';
+import { ar, h, KIND_COLORS, LEVEL_BG, LEVEL_SWATCH } from './format';
 import { sum } from '../engine/rounding';
 
 export type Inspect = (a: Audit) => void;
@@ -63,7 +63,9 @@ export function AgendaSheet({ inst, agenda, onInspect = noop }: { inst: Instruct
           <tr>
             {W.map(w => {
               const k = hdrKind(w.week);
-              return <th key={w.week} style={k ? { background: KIND_COLORS[k].bg, color: KIND_COLORS[k].fg } : undefined}>{ar(w.week)}</th>;
+              // prep / reserve / ops weeks keep their own colour; every other week takes the colour of its level (فرد / طاقم / مركز)
+              const style = k ? { background: KIND_COLORS[k].bg, color: KIND_COLORS[k].fg } : w.level ? { background: LEVEL_BG[w.level], color: '#111' } : undefined;
+              return <th key={w.week} style={style}>{ar(w.week)}</th>;
             })}
             <th>ن</th><th className="r">ل</th><th>ج</th>
           </tr>

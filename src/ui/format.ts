@@ -20,6 +20,8 @@ export const KIND_COLORS: Record<DayKind, { bg: string; fg: string; label: strin
   reserve: { bg: '#14532D', fg: '#fff', label: 'إسبوع إحتياط' },
   march: { bg: '#881337', fg: '#fff', label: 'طابور سير' },
 };
+/** week-number header colour of each training level (same as the legend) */
+export const LEVEL_BG = { individual: '#F8D5B8', crew: '#948A54', centre: '#DDB8B8' } as const;
 export const LEVEL_SWATCH = [
   { bg: '#F8D5B8', label: 'مستوى فرد' },
   { bg: '#948A54', label: 'مستوى طاقم' },
