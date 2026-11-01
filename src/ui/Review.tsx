@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { DateRange, Instructions, SubjectPcts } from '../engine/types';
 import { LOW } from '../parser/parse';
 import { monthNames, defaultWeeksPerMonth } from '../engine/dates';
@@ -15,7 +15,43 @@ interface Props {
   onBack: () => void;
 }
 
-const nums = (s: string) => s.split(/[,،\s]+/).filter(Boolean).map(Number).filter(n => Number.isFinite(n));
+/**
+ * Forgiving list of numbers: any separator (، , ; space و), Arabic-Indic digits, and ranges (12-14, 12 الى 14).
+ * Weeks are de-duplicated and sorted; a list that must keep its order (weeks per month) is not.
+ */
+export function parseList(raw: string, sorted: boolean): number[] {
+  const t = raw
+    .replace(/[٠-٩]/g, c => String(c.charCodeAt(0) - 0x660)).replace(/[۰-۹]/g, c => String(c.charCodeAt(0) - 0x6f0))
+    .replace(/\s*(?:الى|إلى|الي|to|[-–—~…])\s*/gi, '-')
+    .replace(/(\d)\s*و\s*(?=\d)/g, '$1,'); // "12 و 13"
+  const out: number[] = [];
+  for (const tok of t.split(/[,،;؛\s]+/).filter(Boolean)) {
+    const r = tok.match(/^(\d+)-(\d+)$/);
+    if (r) { const a = +r[1]; const b = +r[2]; for (let n = Math.min(a, b); n <= Math.max(a, b) && out.length < 200; n++) out.push(n); }
+    else if (/^\d+$/.test(tok)) out.push(+tok);
+  }
+  const uniq = sorted ? [...new Set(out)].sort((x, y) => x - y) : out;
+  return uniq;
+}
+
+const LIST_HINT = 'اكتب رقم الأسبوع أو أكثر. افصل بينها بفاصلة أو مسافة (مثال: 12، 13) أو اكتب مدى بشرطة (مثال: 12-14 تعنى 12 و13 و14). الأرقام الهندية مقبولة.';
+
+/** keeps what the user types as typed (commas included) and only parses it; the text is tidied when the field loses focus */
+function ListInput({ value, onCommit, sorted = true, min, max }: { value: number[]; onCommit: (v: number[]) => void; sorted?: boolean; min?: number; max?: number }) {
+  const shown = value.join('، ');
+  const [text, setText] = useState(shown);
+  const [focus, setFocus] = useState(false);
+  useEffect(() => { if (!focus) setText(shown); }, [shown, focus]);
+  const bad = min !== undefined && max !== undefined ? value.filter(n => n < min || n > max) : [];
+  return (
+    <>
+      <input value={text} inputMode="text" dir="auto" placeholder="مثال: 12، 13 أو 12-14"
+        onFocus={() => setFocus(true)} onBlur={() => { setFocus(false); setText(shown); }}
+        onChange={e => { setText(e.target.value); onCommit(parseList(e.target.value, sorted)); }} />
+      {bad.length > 0 && <small className="warn">الأسبوع {bad.join('، ')} خارج الفترة ({min} إلى {max}) — تأكد من الرقم.</small>}
+    </>
+  );
+}
 const hText = (hs: (string | DateRange)[]) => hs.map(x => (typeof x === 'string' ? x : `${x.from} .. ${x.to}`)).join('\n');
 const hParse = (s: string): (string | DateRange)[] =>
   s.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
@@ -66,10 +102,10 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
         <Field k="startSaturday" label="أول سبت (بداية الأسبوع 1)"><input type="date" value={inst.startSaturday} onChange={e => set('startSaturday', e.target.value)} /></Field>
         <Field k="totalWeeks" label="عدد الأسابيع"><input type="number" min={1} value={inst.totalWeeks} onChange={e => set('totalWeeks', +e.target.value)} /></Field>
         <Field k="firstWeek" label="رقم أول أسبوع (1 للفترة الأولى، 27 للثانية)" hint="الرقم المطبوع على أول أسبوع فى الأجندة."><input type="number" min={1} value={inst.firstWeek} onChange={e => set('firstWeek', +e.target.value)} /></Field>
-        <Field k="prepWeeks" label="أسابيع الفترة التحضيرية"><input value={inst.prepWeeks.join('، ')} onChange={e => set('prepWeeks', nums(e.target.value))} /></Field>
-        <Field k="opsWeeks" label="أسابيع مهام العمليات"><input value={inst.opsWeeks.join('، ')} onChange={e => set('opsWeeks', nums(e.target.value))} /></Field>
-        <Field k="reserveWeeks" label="أسابيع الاحتياط"><input value={inst.reserveWeeks.join('، ')} onChange={e => set('reserveWeeks', nums(e.target.value))} /></Field>
-        <Field k="campWeeks" label="أسابيع المعسكر الليلى"><input value={inst.campWeeks.join('، ')} onChange={e => set('campWeeks', nums(e.target.value))} /></Field>
+        <Field k="prepWeeks" label="أسابيع الفترة التحضيرية" hint={LIST_HINT}><ListInput value={inst.prepWeeks} onCommit={v => set('prepWeeks', v)} min={inst.firstWeek} max={inst.firstWeek + inst.totalWeeks - 1} /></Field>
+        <Field k="opsWeeks" label="أسابيع مهام العمليات" hint={LIST_HINT}><ListInput value={inst.opsWeeks} onCommit={v => set('opsWeeks', v)} min={inst.firstWeek} max={inst.firstWeek + inst.totalWeeks - 1} /></Field>
+        <Field k="reserveWeeks" label="أسابيع الاحتياط" hint={LIST_HINT}><ListInput value={inst.reserveWeeks} onCommit={v => set('reserveWeeks', v)} min={inst.firstWeek} max={inst.firstWeek + inst.totalWeeks - 1} /></Field>
+        <Field k="campWeeks" label="أسابيع المعسكر الليلى" hint={LIST_HINT}><ListInput value={inst.campWeeks} onCommit={v => set('campWeeks', v)} min={inst.firstWeek} max={inst.firstWeek + inst.totalWeeks - 1} /></Field>
         <Field k="ramadan" label="شهر رمضان (من / إلى)">
           <div className="two">
             <input type="date" value={inst.ramadan?.from ?? ''} onChange={e => set('ramadan', e.target.value ? { from: e.target.value, to: inst.ramadan?.to ?? e.target.value } : null, 'ramadan')} />
@@ -81,7 +117,7 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
         </Field>
         <Field k="weeksPerMonth" label="عدد أسابيع كل شهر (قابل للتعديل)" wide hint="كم أسبوعاً يُحسب لكل شهر فى جداول الامتحان. مجموعها يساوى عدد الأسابيع.">
           <div className="two">
-            <input value={inst.weeksPerMonth.join('، ')} onChange={e => set('weeksPerMonth', nums(e.target.value))} />
+            <ListInput value={inst.weeksPerMonth} onCommit={v => set('weeksPerMonth', v)} sorted={false} />
             <button type="button" className="mini" onClick={() => set('weeksPerMonth', defaultWeeksPerMonth(inst.startSaturday, inst.totalWeeks))}>حسب التقويم</button>
           </div>
           <small>{names.map((n, i) => `${n}: ${inst.weeksPerMonth[i]}`).join(' · ')} — المجموع {inst.weeksPerMonth.reduce((a, b) => a + b, 0)}</small>

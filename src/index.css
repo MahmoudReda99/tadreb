@@ -143,3 +143,5 @@ h1, h2, h3 { margin: 0; }
 .tray .no { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; background: var(--gold); color: #1a1500; font-weight: 700; display: grid; place-items: center; }
 .tray .ctl { display: flex; gap: 6px; padding: 6px; justify-content: center; }
 .tray .mini:disabled { opacity: .35; }
+
+.warn { color: #ffb86b; font-size: .85rem; }
