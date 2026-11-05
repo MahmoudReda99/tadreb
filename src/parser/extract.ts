@@ -105,11 +105,12 @@ export async function ocrPage(w: Worker, page: HTMLCanvasElement, progress?: (p:
   const words = (data.words ?? (data.blocks ?? []).flatMap(b => b.paragraphs.flatMap(p => p.lines.flatMap(l => l.words)))) as OcrWord[];
   const nums = await readNumbers(words, canvas); // glyph reads only; the digit family is decided later, over the whole document
   progress?.(1);
+  const info = { w: canvas.width, h: canvas.height, rotated: canvas !== bw };
   release(bw, small, canvas, page);
-  return { text: data.text, conf: Math.max(0.05, Math.min(1, data.confidence / 100)), words, nums };
+  return { text: data.text, conf: Math.max(0.05, Math.min(1, data.confidence / 100)), words, nums, info };
 }
 
-interface PageRead { text: string; conf: number; words: OcrWord[]; nums: NumberReads }
+interface PageRead { text: string; conf: number; words: OcrWord[]; nums: NumberReads; info: { w: number; h: number; rotated: boolean } }
 
 interface OcrWord { text: string; bbox: { x0: number; y0: number; x1: number; y1: number } }
 
@@ -194,6 +195,7 @@ export async function ocrMany(n: number, getCanvas: (i: number) => Promise<HTMLC
   const workers = await Promise.all(Array.from({ length: lanes }, () => newWorker()));
   try {
     const reads: (PageRead | null)[] = new Array(n).fill(null);
+    const perPage: string[] = new Array(n).fill('');
     const pages: string[] = new Array(n).fill('');
     const confs: number[] = new Array(n).fill(0);
     const prog: number[] = new Array(n).fill(0);
@@ -205,9 +207,10 @@ export async function ocrMany(n: number, getCanvas: (i: number) => Promise<HTMLC
         const i = next++;
         if (i >= n) return;
         try {
+          const t0 = performance.now();
           const big = await getCanvas(i);
           const r = await ocrPage(w, big, p => { prog[i] = p; onProgress?.(prog.reduce((a, b) => a + b, 0) / n); });
-          reads[i] = r; confs[i] = r.conf;
+          reads[i] = r; confs[i] = r.conf; perPage[i] = `ص${i + 1}: ${r.info.w}×${r.info.h}${r.info.rotated ? ' (مُدارة)' : ''} · ثقة ${Math.round(r.conf * 100)}٪ · ${r.words.length} كلمة · ${r.nums.groups.length} رقم · ${((performance.now() - t0) / 1000).toFixed(1)} ث`;
         } catch (e) { errors.push(`الصفحة ${i + 1}: ${e instanceof Error ? e.message : String(e)}`); }
       }
     };
@@ -220,7 +223,7 @@ export async function ocrMany(n: number, getCanvas: (i: number) => Promise<HTMLC
       const a = applyNumbers(r.text, r.words, r.nums, script);
       pages[i] = a.text; numbers.push(...a.log);
     });
-    return { pages, confidence: (confs.reduce((a, b) => a + b, 0) / n) * 0.9, errors, numbers, report: `الصفحات: ${n - errors.length}/${n} · الأرقام المقروءة بالشكل: ${numbers.length} · نوع الأرقام: ${script === 'latin' ? 'عادية' : 'هندية'} · ${isMobile() ? 'جهاز محمول' : 'حاسوب'}` };
+    return { pages, confidence: (confs.reduce((a, b) => a + b, 0) / n) * 0.9, errors, numbers, report: `${perPage.filter(Boolean).join('\n')}\nالصفحات: ${n - errors.length}/${n} · الأرقام المقروءة بالشكل: ${numbers.length} · نوع الأرقام: ${script === 'latin' ? 'عادية' : 'هندية'} · ${isMobile() ? 'جهاز محمول' : 'حاسوب'}` };
   } finally { await Promise.all(workers.map(w => w.terminate())); }
 }
 
