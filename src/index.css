@@ -86,7 +86,7 @@ h1, h2, h3 { margin: 0; }
 .subj { text-align: right; padding-inline-start: 6px !important; font-weight: 700; }
 .dist td, .link td, .weekly td { height: 22px; } .dist tbody tr:nth-child(even):not(.band):not(.sub) td { background: #f2f2f2; }
 .sub td { background: #a5d16b; font-weight: 700; } .sub.grand td { background: #4facf0; }
-.link td.pair, .link .pair { white-space: nowrap; direction: ltr; unicode-bidi: isolate; } .link tbody tr:nth-child(even):not(.band):not(.sub) td { background: #f2f2f2; }
+.pair { white-space: nowrap; } .link tbody tr:nth-child(even):not(.band):not(.sub) td { background: #f2f2f2; }
 .link .mh2 { background: #ddd !important; }
 .pair i { font-style: normal; }
 .weekly th { background: #a5d16b; } .weekly td.slot { background: #fff59a; } .weekly td div { white-space: nowrap; font-weight: 700; }
@@ -147,20 +147,22 @@ h1, h2, h3 { margin: 0; }
 .warn { color: #ffb86b; font-size: .85rem; }
 
 .ok { color: var(--green); font-size: .85rem; }
-.hol { display: grid; gap: 10px; }
-.hol-row { display: grid; grid-template-columns: 28px 1fr 1fr auto; gap: 8px; align-items: start; padding: 8px; border: 1px dashed var(--line); border-radius: 10px; }
-.hol-row .no { width: 28px; height: 28px; border-radius: 50%; background: var(--gold); color: #1a1500; font-weight: 700; display: grid; place-items: center; margin-top: 18px; }
-.hol-row > small { grid-column: 2 / -1; }
-.hol-row .mini { margin-top: 18px; }
-.hol-row small { color: var(--muted); display: block; }
+.hol { display: grid; gap: 12px; }
+.hol-row { display: grid; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.hol-head { display: flex; align-items: center; gap: 10px; }
+.hol-head .no { width: 30px; height: 30px; border-radius: 50%; background: var(--gold); color: #1a1500; font-weight: 700; display: grid; place-items: center; flex: none; }
+.hol-head .when { flex: 1; color: var(--muted); font-size: .9rem; min-width: 0; }
+.hol-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hol-fields label { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; font-weight: 400; }
+.hol-fields input { width: 100%; }
+.hol-fields small { color: var(--muted); }
 .hol-row small.warn { color: #ffb86b; } .hol-row small.ok { color: var(--green); }
-@media (max-width: 600px) { .hol-row { grid-template-columns: 28px 1fr; } .hol-row .mini { grid-column: 2; margin-top: 0; justify-self: start; } }
+@media (max-width: 600px) { .hol-fields { grid-template-columns: 1fr; } }
 
-.diag { margin: 14px 0; border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; background: var(--bg2); }
-.diag summary { cursor: pointer; padding: 6px 0; }
-.diag-list { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
-.diag-list li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
-.diag-list li.pass b { color: var(--green); } .diag-list li.fail { border-color: var(--red); } .diag-list li.fail b { color: #ff8a84; }
-.diag-list pre { white-space: pre-wrap; margin: 6px 0 0; font-size: .8rem; color: var(--muted); word-break: break-word; }
 
-.notes-list li { white-space: pre-line; }
+
+/* morning on the right, night (red) on the left — in every table, whatever the surrounding direction */
+.dn { display: inline-flex; flex-direction: row; direction: rtl; unicode-bidi: isolate; align-items: baseline; gap: .3em; white-space: nowrap; }
+.dn > .sep { font-style: normal; }
+
+.fld input, .fld textarea { text-align: right; }

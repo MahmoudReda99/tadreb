@@ -13,7 +13,7 @@ const Num = ({ v, on, text }: { v: number; on?: () => void; text?: string }) => 
 );
 /** day / night hours — the night figure is always red, as on the form */
 const Pair = ({ d, n, onD, onN }: { d: number; n: number; onD?: () => void; onN?: () => void }) => (
-  <><Num v={d} on={onD} /> <i>/</i> <span className="r"><Num v={n} on={onN} /></span></>
+  <span className="dn"><Num v={d} on={onD} /><i className="sep">/</i><span className="r"><Num v={n} on={onN} /></span></span>
 );
 const Title = ({ children, grade }: { children: React.ReactNode; grade: string }) => (
   <div className="sheet-head"><span className="grade">({grade})</span><div className="sheet-title">{children}</div></div>
@@ -226,11 +226,9 @@ export function LinkingSheet({ inst, agenda, dist, link, onInspect = noop }: { i
   const pair = (b: typeof M, col: number, k: SubjectKey) => {
     const c = b.cells[col][k];
     return (
-      <span className="pair">
-        <Num v={c.day} on={() => onInspect(auditLink(b, grand, rowsOf(b, dist), col, k, 'day'))} />
-        <i> / </i>
-        <span className="r"><Num v={c.night} on={() => onInspect(auditLink(b, grand, rowsOf(b, dist), col, k, 'night'))} /></span>
-      </span>
+      <Pair d={c.day} n={c.night}
+        onD={() => onInspect(auditLink(b, grand, rowsOf(b, dist), col, k, 'day'))}
+        onN={() => onInspect(auditLink(b, grand, rowsOf(b, dist), col, k, 'night'))} />
     );
   };
   const rowsOf = (b: typeof M, d: DistributionResult) => (b === M ? d.cells : Object.fromEntries(ALL_KEYS.map(k => [k, M.cells[sm][k]])) as typeof d.cells);

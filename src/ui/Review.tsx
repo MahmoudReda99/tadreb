@@ -46,7 +46,7 @@ function ListInput({ value, onCommit, sorted = true, min, max }: { value: number
   const bad = min !== undefined && max !== undefined ? value.filter(n => n < min || n > max) : [];
   return (
     <>
-      <input value={text} inputMode="text" dir="auto" placeholder="مثال: ١٢، ١٣"
+      <input value={text} inputMode="text" dir="rtl" placeholder="مثال: ١٢، ١٣"
         onFocus={() => setFocus(true)} onBlur={() => { setFocus(false); setText(shown); }}
         onChange={e => { setText(toArabic(e.target.value)); onCommit(parseList(e.target.value, sorted)); }} />
       {bad.length > 0 && <small className="warn">الأسبوع {toArabic(bad.join('، '))} خارج الفترة ({toArabic(String(min))} إلى {toArabic(String(max))}) — تأكد من الرقم.</small>}
@@ -99,12 +99,16 @@ function HolidayList({ value, onCommit, ctx }: { value: (string | DateRange)[]; 
       {rows.length === 0 && <small>لا توجد أجازات — اضغط «إضافة أجازة».</small>}
       {rows.map((r, i) => (
         <div className="hol-row" key={r.id}>
-          <span className="no">{toArabic(String(i + 1))}</span>
-          <div><small>من</small><DateInput value={r.from} ctx={ctx} onCommit={d => upd(r.id, { from: d })} label={`أجازة ${i + 1} من`} /></div>
-          <div><small>إلى (اختيارى — لأكثر من يوم)</small><DateInput value={r.to} ctx={ctx} optional placeholder="اتركه فارغاً ليوم واحد" onCommit={d => upd(r.id, { to: d })} label={`أجازة ${i + 1} إلى`} /></div>
+          <div className="hol-head">
+            <span className="no">{toArabic(String(i + 1))}</span>
+            <span className="when">{r.from ? `${WEEKDAY(r.from)} ${formatDate(r.from)}${days(r) > 1 ? ` ← ${formatDate(r.to)} (${toArabic(String(days(r)))} أيام)` : ''}` : 'أجازة جديدة'}</span>
+            <button type="button" className="mini danger" onClick={() => push(rows.filter(x => x.id !== r.id))}>حذف</button>
+          </div>
+          <div className="hol-fields">
+            <label><small>من</small><DateInput value={r.from} ctx={ctx} onCommit={d => upd(r.id, { from: d })} label={`أجازة ${i + 1} من`} /></label>
+            <label><small>إلى (اختيارى — لأكثر من يوم)</small><DateInput value={r.to} ctx={ctx} optional placeholder="فارغ = يوم واحد" onCommit={d => upd(r.id, { to: d })} label={`أجازة ${i + 1} إلى`} /></label>
+          </div>
           {r.from && r.to && r.to < r.from && <small className="warn">تاريخ النهاية قبل البداية — سيُحسب يوماً واحداً.</small>}
-          {days(r) > 1 && <small className="ok">{toArabic(String(days(r)))} أيام</small>}
-          <button type="button" className="mini danger" onClick={() => push(rows.filter(x => x.id !== r.id))}>حذف</button>
         </div>
       ))}
       <button type="button" className="mini" onClick={() => push([...rows, { id: ++seq.current, from: null, to: null }])}>+ إضافة أجازة</button>

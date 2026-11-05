@@ -9,7 +9,6 @@ import { emptyInstructions } from './engine/instructions';
 import { monthNames } from './engine/dates';
 import { parseInstructions } from './parser/parse';
 import { extractText } from './parser/extract';
-import { runSelfTest, type Check } from './parser/selftest';
 import { importJson, listProjects, removeProject, saveProject, type Project } from './db/database';
 import { exportPdf } from './export/pdf';
 import { Review } from './ui/Review';
@@ -48,7 +47,6 @@ export default function App() {
   const [confirmed, setConfirmed] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState<string[]>([]);
   const [rawText, setRawText] = useState('');
-  const [diag, setDiag] = useState<{ running: boolean; checks: Check[] } | null>(null);
   const [queue, setQueue] = useState<{ file: File; url: string }[]>([]);
   const [busy, setBusy] = useState<{ label: string; p: number } | null>(null);
   const [error, setError] = useState('');
@@ -77,12 +75,6 @@ export default function App() {
     if (files.every(f => f.type.startsWith('image/'))) setQueue(q => [...q, ...files.map(file => ({ file, url: URL.createObjectURL(file) }))]);
     else onFiles(files);
   }
-  async function runDiag() {
-    setDiag({ running: true, checks: [] });
-    const all: Check[] = [];
-    await runSelfTest(c => { all.push(c); setDiag({ running: true, checks: [...all] }); }).catch(e => all.push({ name: 'خطأ غير متوقع', ok: false, detail: String(e) }));
-    setDiag({ running: false, checks: [...all] });
-  }
   function startQueue() {
     const files = queue.map(q => q.file);
     queue.forEach(q => URL.revokeObjectURL(q.url));
@@ -100,7 +92,7 @@ export default function App() {
     try {
       const x = await extractText(files, p => setBusy({ label: 'التعرف الضوئى على النص العربى…', p }));
       const r = parseInstructions(x.text, x.source === 'docx' || x.source === 'txt' || x.source === 'pdf' ? x.confidence : Math.max(0.6, x.confidence));
-      setInst(r.instructions); setConf(r.conf); setNotes([...(x.errors?.length ? [`تعذّرت قراءة بعض الصفحات على هذا الجهاز: ${x.errors.join(' — ')}`] : []), ...r.notes, ...(x.report ? [`ملخص القراءة — ${x.report}`] : [])]); setRawText(x.source === 'docx' || x.source === 'txt' ? '' : x.text); setConfirmed(new Set());
+      setInst(r.instructions); setConf(r.conf); setNotes([...(x.errors?.length ? [`تعذّرت قراءة بعض الصفحات على هذا الجهاز: ${x.errors.join(' — ')}`] : []), ...r.notes]); setRawText(x.source === 'docx' || x.source === 'txt' ? '' : x.text); setConfirmed(new Set());
       setPid(uid()); setView('review');
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(null); }
@@ -169,18 +161,6 @@ export default function App() {
             <label className="btn ghost">استيراد JSON<input type="file" accept="application/json,.json" hidden onChange={e => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ''; }} /></label>
             <button className="btn ghost" onClick={() => open(emptyInstructions())}>إدخال يدوى</button>
           </div>
-          <details className="diag">
-            <summary>اختبار الجهاز (لو القراءة على الهاتف تختلف عن الحاسوب)</summary>
-            <p className="hint">اضغط «ابدأ الاختبار» وانتظر حتى ينتهى (نحو نصف دقيقة)، ثم صوّر الشاشة وأرسلها لى.</p>
-            <button type="button" className="btn" onClick={runDiag} disabled={diag?.running}>{diag?.running ? 'جارى الاختبار…' : 'ابدأ الاختبار'}</button>
-            {diag && (
-              <ul className="diag-list">
-                {diag.checks.map((c, i) => (
-                  <li key={i} className={c.ok ? 'pass' : 'fail'}><b>{c.ok ? '✔' : '✘'} {c.name}</b><pre dir="auto">{c.detail}</pre></li>
-                ))}
-              </ul>
-            )}
-          </details>
           <h2>المشروعات المحفوظة</h2>
           {projects.length === 0 ? <p className="hint">لا توجد مشروعات محفوظة بعد.</p> : (
             <ul className="projects">
