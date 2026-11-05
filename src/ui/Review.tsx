@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import type { DateRange, Instructions, SubjectPcts } from '../engine/types';
 import { LOW } from '../parser/parse';
 import { DAYS_AR, addDays, defaultWeeksPerMonth, dowOf, monthNames } from '../engine/dates';
-import { formatDate, parseDate, parseList, parseNum, toArabic } from './parseInput';
+import { formatDate, parseDate, parseList, parseNum, toArabic, toLatin } from './parseInput';
 
 interface Props {
   inst: Instructions;
@@ -17,6 +17,10 @@ interface Props {
 }
 
 const LIST_HINT = 'اكتب رقم الأسبوع أو أكثر، وافصل بينها بفاصلة أو مسافة أو أى علامة (مثال: 12، 13). كل رقم أسبوع مستقل: 19-23 تعنى الأسبوعين 19 و23 فقط وليس ما بينهما. تقبل الأرقام الهندية والعادية.';
+
+/** digits (either kind) and the separators a list or a date needs — letters and symbols are dropped as they are typed */
+const keepList = (s: string) => s.replace(/[^0-9٠-٩۰-۹\s,،;؛\-–—/.]/g, '');
+const keepDate = (s: string) => s.replace(/[^0-9٠-٩۰-۹\s\-–—/.]/g, '');
 
 /** a whole number: shown in Arabic digits, accepts either kind, a leading zero never sticks, the whole value is selected on focus */
 function NumInput({ value, onCommit, min = 0, max = 999, label }: { value: number; onCommit: (n: number) => void; min?: number; max?: number; label?: string }) {
@@ -48,7 +52,7 @@ function ListInput({ value, onCommit, sorted = true, min, max }: { value: number
     <>
       <input value={text} inputMode="text" dir="rtl" placeholder="مثال: ١٢، ١٣"
         onFocus={() => setFocus(true)} onBlur={() => { setFocus(false); setText(shown); }}
-        onChange={e => { setText(toArabic(e.target.value)); onCommit(parseList(e.target.value, sorted)); }} />
+        onChange={e => { const v = keepList(e.target.value); setText(toArabic(v)); onCommit(parseList(v, sorted)); }} />
       {bad.length > 0 && <small className="warn">الأسبوع {toArabic(bad.join('، '))} خارج الفترة ({toArabic(String(min))} إلى {toArabic(String(max))}) — تأكد من الرقم.</small>}
     </>
   );
@@ -71,14 +75,14 @@ function DateInput({ value, onCommit, ctx, optional, placeholder = 'مثال: ٣
         onFocus={e => { setFocus(true); e.target.select(); }}
         onBlur={() => { setFocus(false); if (!bad) setText(shown); }}
         onChange={e => {
-          const raw = e.target.value; setText(toArabic(raw));
+          const raw = keepDate(e.target.value); setText(toArabic(raw));
           if (!raw.trim()) { setBad(false); if (optional) onCommit(null); return; }
           const d = parseDate(raw, ctx);
           setBad(!d);
           if (d) onCommit(d);
         }} />
       {focus && iso && <small className="ok">← {WEEKDAY(iso)} {formatDate(iso)}</small>}
-      {bad && <small className="warn">لم أفهم هذا التاريخ — اكتبه مثل ٣-٤-٢٠٢٦ أو ٣/٤/٢٠٢٦ أو ٣ أبريل ٢٠٢٦.</small>}
+      {bad && <small className="warn">لم أفهم هذا التاريخ — اكتبه أرقاماً مثل ٣-٤-٢٠٢٦ أو ٣/٤/٢٠٢٦.</small>}
     </>
   );
 }
@@ -156,8 +160,8 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
       <p className="hint">الحقول المظللة استُخرجت بثقة منخفضة (غالباً من التعرف الضوئى). عدّلها أو اضغط «القيمة صحيحة» لتأكيدها قبل الحساب.</p>
       <div className="form">
         <Field k="courseName" label="الدورة / الوحدة" wide><input value={inst.courseName} onChange={e => set('courseName', e.target.value)} /></Field>
-        <Field k="yearLabel" label="العام التدريبى (مثل 2025 / 2026)"><input dir="ltr" value={inst.yearLabel ?? ''} placeholder="يُشتق من التواريخ" onChange={e => set('yearLabel', e.target.value || undefined)} /></Field>
-        <Field k="startSaturday" label="أول سبت (بداية الأسبوع 1)" hint="اكتب التاريخ بأى شكل: ٣-٤-٢٠٢٦ أو ٣/٤/٢٠٢٦ أو ٣ أبريل ٢٠٢٦.">
+        <Field k="yearLabel" label="العام التدريبى (مثل 2025 / 2026)"><input dir="rtl" inputMode="numeric" value={toArabic(inst.yearLabel ?? '')} placeholder="يُشتق من التواريخ" onChange={e => { const v = toLatin(e.target.value).replace(/[^0-9\s/\-–]/g, ''); set('yearLabel', v.trim() ? v : undefined); }} /></Field>
+        <Field k="startSaturday" label="أول سبت (بداية الأسبوع 1)" hint="اكتب التاريخ أرقاماً فقط بأى شكل: ٣-٤-٢٠٢٦ أو ٣/٤/٢٠٢٦ أو ٣.٤.٢٠٢٦.">
           <DateInput value={inst.startSaturday} ctx={ctx} onCommit={d => d && set('startSaturday', d)} label="أول سبت" />
           {dowOf(inst.startSaturday) !== 6 && <small className="warn">هذا اليوم {WEEKDAY(inst.startSaturday)} وليس سبتاً — راجع التاريخ.</small>}
         </Field>
