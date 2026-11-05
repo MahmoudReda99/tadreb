@@ -189,7 +189,7 @@ export function applyNumbers(text: string, words: OcrWord[], nums: NumberReads, 
 }
 
 /** OCR many pages at once (one worker on phones); every page is a lazily produced canvas */
-async function ocrMany(n: number, getCanvas: (i: number) => Promise<HTMLCanvasElement>, onProgress?: (p: number) => void) {
+export async function ocrMany(n: number, getCanvas: (i: number) => Promise<HTMLCanvasElement>, onProgress?: (p: number) => void) {
   const lanes = isMobile() ? 1 : Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1, n));
   const workers = await Promise.all(Array.from({ length: lanes }, () => newWorker()));
   try {
