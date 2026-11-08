@@ -197,9 +197,9 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
                 ))}
               </tr>))}</tbody></table>
         </Field>
-        <Field k="marchWeekOfMonth" label="أسبوع الشهر الذى يحمل يوم الطابور" hint="رقم الأسبوع داخل كل شهر الذى يُخصَّص سبته للطابور والأمن الحربى. مثال: 3 تعنى السبت من الأسبوع الثالث فى الشهر."><NumInput value={inst.marchWeekOfMonth} min={1} max={5} onCommit={n => set('marchWeekOfMonth', n)} label="أسبوع الشهر" /></Field>
-        <Field k="marchWeekExceptions" label="شهور يختلف فيها أسبوع يوم الطابور"
-          hint="القاعدة العامة أعلاه تنطبق على كل الشهور. أضف هنا أى شهر يكون فيه يوم الطابور فى أسبوع آخر (مثال: شهر مارس فى الأسبوع الرابع).">
+        <Field k="marchWeekOfMonth" label="أسبوع الشهر الذى يحمل يوم طابور السير" hint="رقم الأسبوع داخل كل شهر الذى يُخصَّص سبته للطابور والأمن الحربى. مثال: 3 تعنى السبت من الأسبوع الثالث فى الشهر."><NumInput value={inst.marchWeekOfMonth} min={1} max={5} onCommit={n => set('marchWeekOfMonth', n)} label="أسبوع الشهر" /></Field>
+        <Field k="marchWeekExceptions" label="شهور يختلف فيها أسبوع يوم طابور السير"
+          hint="القاعدة العامة أعلاه تنطبق على كل الشهور. أضف هنا أى شهر يكون فيه يوم طابور السير فى أسبوع آخر (مثال: شهر مارس فى الأسبوع الرابع).">
           <div className="exc">
             {Object.entries(inst.marchWeekExceptions).length === 0 && <small>لا توجد استثناءات — كل الشهور تتبع القاعدة العامة.</small>}
             {Object.entries(inst.marchWeekExceptions).map(([m, w]) => (
@@ -208,7 +208,7 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
                   const next = { ...inst.marchWeekExceptions }; delete next[+m]; next[+e.target.value] = w;
                   set('marchWeekExceptions', next, 'marchWeekExceptions');
                 }}>{names.map((n, i) => <option key={i} value={i}>{n}</option>)}</select>
-                <span>يكون يوم الطابور فى الأسبوع رقم</span>
+                <span>يكون يوم طابور السير فى الأسبوع رقم</span>
                 <NumInput label="رقم الأسبوع داخل الشهر" value={w} min={1} max={5}
                   onCommit={n => set('marchWeekExceptions', { ...inst.marchWeekExceptions, [+m]: n }, 'marchWeekExceptions')} />
                 <button type="button" className="mini danger" onClick={() => {

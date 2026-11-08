@@ -15,8 +15,8 @@ const Num = ({ v, on, text }: { v: number; on?: () => void; text?: string }) => 
 const Pair = ({ d, n, onD, onN }: { d: number; n: number; onD?: () => void; onN?: () => void }) => (
   <span className="dn"><Num v={d} on={onD} /><i className="sep">/</i><span className="r"><Num v={n} on={onN} /></span></span>
 );
-const Title = ({ children, grade }: { children: React.ReactNode; grade: string }) => (
-  <div className="sheet-head"><span className="grade">({grade})</span><div className="sheet-title">{children}</div></div>
+const Title = ({ children, grade }: { children: React.ReactNode; grade?: string }) => (
+  <div className="sheet-head">{grade ? <span className="grade">({grade})</span> : null}<div className="sheet-title">{children}</div></div>
 );
 const YEARS = (i: Instructions) => {
   if (i.yearLabel) return ar(i.yearLabel);
@@ -48,7 +48,7 @@ export function AgendaSheet({ inst, agenda, onInspect = noop }: { inst: Instruct
     onInspect(auditSum(`الأسبوع ${w.week} — ${what === 'day' ? 'نهارى' : what === 'night' ? 'ليلى' : 'الإجمالى'}`, 'مجموع ساعات أيام الأسبوع', w.days.map(d => ({ label: dm(d.date), value: what === 'day' ? d.day : what === 'night' ? d.night : d.day + d.night }))));
   return (
     <div className="sheet" dir="rtl">
-      <Title grade="٢٠ درجة">
+      <Title>
         <div className="u">أجندة التدريب</div>
         <div className="u">للفترة التدريبية الأولى من العام التدريبى {YEARS(inst)} م</div>
         <div className="u">{inst.courseName || '—'}</div>
@@ -191,7 +191,7 @@ export function DistributionSheet({ inst, agenda, dist, onInspect = noop }: { in
   const gen = GENERAL_KEYS;
   return (
     <div className="sheet" dir="rtl">
-      <Title grade="٢٠ درجة"><div className="u">توزيع الساعات على الموضوعات</div></Title>
+      <Title><div className="u">توزيع الساعات على الموضوعات</div></Title>
       <table className="grid dist">
         <thead>
           <tr><th rowSpan={2}>م</th><th rowSpan={2}>الموضوع</th><th rowSpan={2}>النسبة المئوية</th><th rowSpan={2}>عدد الساعات</th><th rowSpan={2}>نهارى</th><th rowSpan={2}>ليلى</th>
@@ -269,7 +269,7 @@ export function LinkingSheet({ inst, agenda, dist, link, onInspect = noop }: { i
   );
   return (
     <div className="sheet" dir="rtl">
-      <Title grade="٢٠ درجة">
+      <Title>
         <div className="u">جدول ربط الساعات والموضوعات (نهارى / ليلى)</div>
         <div className="u">عن الفترة التدريبية الأولى من العام التدريبى {YEARS(inst)} م</div>
       </Title>
@@ -313,7 +313,7 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
   const wsum = (title: string, rule: string, parts: { label: string; value: number }[]) => () => onInspect(auditSum(title, rule, parts));
   return (
     <div className="sheet framed" dir="rtl">
-      <div className="mod"><span>وزارة الدفـــاع</span><span className="grade">(١٠ درجة)</span></div>
+      <div className="mod"><span>وزارة الدفـــاع</span></div>
       <div className="cmd">قائد الكتيبة ........................ <br />صودق ،،،</div>
       <div className="sheet-title c">
         <div className="u">مستخرج الموضوعات والساعات عن الاسبوع رقم ( {ar(ex.week)} )</div>
