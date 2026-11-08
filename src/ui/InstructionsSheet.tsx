@@ -34,30 +34,6 @@ export function InstructionsPage1({ inst }: { inst: Instructions }) {
 
   return (
     <div className="sheet inst-sheet inst-page" dir="rtl">
-      {/* Student Box */}
-      <table className="inst-header-table student-box">
-        <tbody>
-          <tr>
-            <td style={{ width: '38%' }}>
-              <div><b>الرتبة /</b></div>
-              <div style={{ marginTop: '10px' }}><b>اسم /</b></div>
-            </td>
-            <td style={{ width: '37%' }}>
-              <div><b>الفرقة /</b></div>
-              <div style={{ marginTop: '10px' }}><b>الرقم السرى /</b></div>
-            </td>
-            <td style={{ width: '25%', verticalAlign: 'top' }}>
-              <div><b>رقم الجلوس /</b></div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      {/* Warning Bar */}
-      <div className="inst-warning-band">
-        لا تـكـتــــــب خـلـــــف هــذا الـجـــــزء
-      </div>
-
       {/* Exam Header Table */}
       <table className="inst-header-table exam-info-box">
         <tbody>
