@@ -313,8 +313,10 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
   const wsum = (title: string, rule: string, parts: { label: string; value: number }[]) => () => onInspect(auditSum(title, rule, parts));
   return (
     <div className="sheet framed" dir="rtl">
-      <div className="mod"><span>وزارة الدفـــاع</span></div>
-      <div className="cmd">قائد الكتيبة ........................ <br />صودق ،،،</div>
+      <div className="mod">
+        <span>وزارة الدفـــاع</span>
+        <span style={{ textAlign: 'left' }}>قائد الكتيبة ........................<br />صودق ،،،</span>
+      </div>
       <div className="sheet-title c">
         <div className="u">مستخرج الموضوعات والساعات عن الاسبوع رقم ( {ar(ex.week)} )</div>
         <div className="u">من الفترة التدريبية الأولى للعام التدريبى {YEARS(inst)}</div>

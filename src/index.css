@@ -92,7 +92,7 @@ h1, h2, h3 { margin: 0; }
 .weekly th { background: #a5d16b; } .weekly td.slot { background: #fff59a; } .weekly td div { white-space: nowrap; font-weight: 700; }
 .weekly td { vertical-align: middle; } .weekly tbody tr:nth-child(odd) td:not(.slot) { background: #f4f4f4; }
 .framed { border: 6px double #0b1f8a; padding: 18px 28px; position: relative; }
-.mod { display: flex; justify-content: space-between; font-weight: 700; text-decoration: underline; font-size: 14px; }
+.mod { display: flex; justify-content: space-between; align-items: flex-start; font-weight: 700; text-decoration: underline; font-size: 14px; }
 .cmd { font-weight: 700; margin: 4px 0; }
 .notes { margin-top: 10px; font-weight: 700; } .notes .sig { float: left; font-weight: 400; }
 .tap { cursor: pointer; } .tap:hover { outline: 2px solid #c9a24b; outline-offset: -2px; background-clip: padding-box; }
