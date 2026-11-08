@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { DateRange, Instructions, SubjectPcts } from '../engine/types';
+import type { CustomSubject, DateRange, Instructions, SubjectPcts } from '../engine/types';
+import { getNightKeys } from '../engine/types';
 import { LOW } from '../parser/parse';
 import { DAYS_AR, addDays, defaultWeeksPerMonth, dowOf, monthNames } from '../engine/dates';
 import { formatDate, parseDate, parseList, parseNum, toArabic, toLatin } from './parseInput';
@@ -120,11 +121,26 @@ function HolidayList({ value, onCommit, ctx }: { value: (string | DateRange)[]; 
   );
 }
 
-const PCT_LABEL: [keyof SubjectPcts, string][] = [
-  ['mainPct', 'الموضوعات الرئيسية'], ['tactics', 'تكتيك عام'], ['tech', 'فنى تخصصى'], ['shooting', 'رماية'], ['fitness', 'تربية بدنية'],
-  ['education', 'تعليم منضم'], ['discipline', 'انضباط عسكرى'], ['security', 'أمن حربى'], ['topography', 'طبوغرافيا'], ['morale', 'تدريب معنوي'],
-  ['recon', 'سطع وعدو'], ['engineering', 'تدريب هندسى'], ['chemical', 'تدريب كيميائى'], ['admin', 'تدريب إدارى'], ['history', 'تاريخ عسكرى'],
-  ['intlLaw', 'قانون دولى'], ['infoWar', 'حرب المعلومات'],
+const MAIN_SUBJS: [keyof SubjectPcts, string][] = [
+  ['tactics', 'تكتيك عام'],
+  ['tech', 'تدريب فنى تخصصى'],
+  ['shooting', 'رماية أ ص'],
+  ['fitness', 'تربية بدنية'],
+];
+
+const GEN_SUBJS: [keyof SubjectPcts, string][] = [
+  ['education', 'تعليم منضم'],
+  ['discipline', 'انضباط عسكرى'],
+  ['security', 'أمن حربى'],
+  ['topography', 'طبوغرافيا'],
+  ['morale', 'تدريب معنوي'],
+  ['recon', 'سطع وعدو'],
+  ['engineering', 'تدريب هندسى'],
+  ['chemical', 'تدريب كيميائى'],
+  ['admin', 'تدريب إدارى'],
+  ['history', 'تاريخ عسكرى'],
+  ['intlLaw', 'قانون دولى إنسانى'],
+  ['infoWar', 'حرب المعلومات'],
 ];
 
 interface Ctx { conf: Record<string, number>; low: (k: string) => boolean; confirm: (k: string) => void }
@@ -151,6 +167,46 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
   const pending = Object.keys(conf).filter(low);
   const ctx: Ctx2 = { from: inst.startSaturday, to: addDays(inst.startSaturday, inst.totalWeeks * 7 - 1) };
   const set = <K extends keyof Instructions>(k: K, v: Instructions[K], key: string = k as string) => onChange({ ...inst, [k]: v }, key);
+
+  const currentNightKeys = getNightKeys(inst);
+  const toggleNight = (key: string) => {
+    const isNight = currentNightKeys.includes(key);
+    const nextNight = isNight ? currentNightKeys.filter(k => k !== key) : [...currentNightKeys, key];
+    const nextCustom = (inst.customSubjects || []).map(s => (s.id === key ? { ...s, hasNight: !isNight } : s));
+    onChange({ ...inst, nightKeys: nextNight, customSubjects: nextCustom }, 'pcts');
+  };
+
+  const addCustomSubject = (category: 'main' | 'general' = 'general') => {
+    const newId = `custom_${Date.now()}`;
+    const newSub: CustomSubject = {
+      id: newId,
+      name: '',
+      category,
+      pct: 2,
+      hasNight: false,
+    };
+    const nextCustom = [...(inst.customSubjects || []), newSub];
+    onChange({ ...inst, customSubjects: nextCustom }, 'pcts');
+  };
+
+  const updateCustomSubject = (id: string, patch: Partial<CustomSubject>) => {
+    let nextNight = currentNightKeys;
+    if ('hasNight' in patch) {
+      if (patch.hasNight && !nextNight.includes(id)) {
+        nextNight = [...nextNight, id];
+      } else if (patch.hasNight === false) {
+        nextNight = nextNight.filter(k => k !== id);
+      }
+    }
+    const nextCustom = (inst.customSubjects || []).map(s => (s.id === id ? { ...s, ...patch } : s));
+    onChange({ ...inst, customSubjects: nextCustom, nightKeys: nextNight }, 'pcts');
+  };
+
+  const removeCustomSubject = (id: string) => {
+    const nextCustom = (inst.customSubjects || []).filter(s => s.id !== id);
+    const nextNight = currentNightKeys.filter(k => k !== id);
+    onChange({ ...inst, customSubjects: nextCustom, nightKeys: nextNight }, 'pcts');
+  };
 
   return (
     <FieldCtx.Provider value={{ conf, low, confirm: onConfirmField }}>
@@ -230,11 +286,178 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
             ))}
           </div>
         </Field>
-        <Field k="pcts" label="النسب المئوية للموضوعات" wide>
-          <div className="pcts">
-            {PCT_LABEL.map(([k, l]) => (
-              <label key={k}><span>{l}</span><NumInput value={inst.pcts[k]} min={0} max={100} label={l} onCommit={n => set('pcts', { ...inst.pcts, [k]: n }, 'pcts')} /></label>
-            ))}
+        <Field k="pcts" label="النسب المئوية للموضوعات والدراسة الليلية" hint="حدد نسبة كل موضوع، وأشر بعلامة (🌙 دراسة ليلية) على الموضوعات التى لها تدريب ليلى. يمكنك أيضاً إضافة موضوعات جديدة وتحديد إن كانت رئيسية أو عامة." wide>
+          {/* Main Subjects Group */}
+          <div className="subj-group">
+            <div className="subj-group-head">
+              <div className="subj-group-title">
+                <span>الموضوعات الرئيسية</span>
+                <span className="badge">{toArabic(String(inst.pcts.mainPct))}%</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <label style={{ fontSize: '.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span>إجمالى نسبة الرئيسية:</span>
+                  <div style={{ width: '70px' }}>
+                    <NumInput value={inst.pcts.mainPct} min={0} max={100} label="نسبة الموضوعات الرئيسية" onCommit={n => set('pcts', { ...inst.pcts, mainPct: n }, 'pcts')} />
+                  </div>
+                  <span>%</span>
+                </label>
+                <button type="button" className="mini" onClick={() => addCustomSubject('main')}>
+                  + إضافة موضوع رئيسى
+                </button>
+              </div>
+            </div>
+            <div className="subj-grid">
+              {MAIN_SUBJS.map(([k, l]) => {
+                const isNight = currentNightKeys.includes(k);
+                return (
+                  <div className="subj-card" key={k}>
+                    <div className="subj-head">
+                      <span className="subj-name">{l}</span>
+                      <button
+                        type="button"
+                        className={`night-badge-btn ${isNight ? 'is-night' : ''}`}
+                        onClick={() => toggleNight(k)}
+                        title={isNight ? 'موضوع له تدريب ليلى (اضغط للإلغاء)' : 'موضوع نهارى فقط (اضغط لتفعيل التدريب الليلى)'}
+                      >
+                        {isNight ? '🌙 دراسة ليلية' : '☀️ نهارى'}
+                      </button>
+                    </div>
+                    <div className="subj-input-row">
+                      <NumInput value={inst.pcts[k]} min={0} max={100} label={l} onCommit={n => set('pcts', { ...inst.pcts, [k]: n }, 'pcts')} />
+                      <span className="pct-sign">%</span>
+                    </div>
+                  </div>
+                );
+              })}
+              {(inst.customSubjects || []).filter(s => s.category === 'main').map(s => (
+                <div className="subj-card custom" key={s.id}>
+                  <div className="subj-head">
+                    <input
+                      type="text"
+                      className="custom-name-input"
+                      placeholder="اسم الموضوع..."
+                      value={s.name}
+                      onChange={e => updateCustomSubject(s.id, { name: e.target.value })}
+                      dir="rtl"
+                    />
+                    <button
+                      type="button"
+                      className={`night-badge-btn ${s.hasNight ? 'is-night' : ''}`}
+                      onClick={() => updateCustomSubject(s.id, { hasNight: !s.hasNight })}
+                      title={s.hasNight ? 'موضوع له تدريب ليلى' : 'نهارى فقط'}
+                    >
+                      {s.hasNight ? '🌙 دراسة ليلية' : '☀️ نهارى'}
+                    </button>
+                  </div>
+                  <div className="subj-input-row">
+                    <select
+                      className="cat-select"
+                      value={s.category}
+                      onChange={e => updateCustomSubject(s.id, { category: e.target.value as 'main' | 'general' })}
+                    >
+                      <option value="main">رئيسية</option>
+                      <option value="general">عامة</option>
+                    </select>
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <NumInput value={s.pct} min={0} max={100} label={s.name || 'النسبة'} onCommit={n => updateCustomSubject(s.id, { pct: n })} />
+                      <span className="pct-sign">%</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="mini danger"
+                      style={{ padding: '2px 8px', minHeight: '30px' }}
+                      onClick={() => removeCustomSubject(s.id)}
+                      title="حذف هذا الموضوع"
+                    >
+                      حذف
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* General Subjects Group */}
+          <div className="subj-group">
+            <div className="subj-group-head">
+              <div className="subj-group-title">
+                <span>الموضوعات العامة</span>
+                <span className="badge">{toArabic(String(100 - inst.pcts.mainPct))}%</span>
+              </div>
+              <button type="button" className="mini" onClick={() => addCustomSubject('general')}>
+                + إضافة موضوع عام
+              </button>
+            </div>
+            <div className="subj-grid">
+              {GEN_SUBJS.map(([k, l]) => {
+                const isNight = currentNightKeys.includes(k);
+                return (
+                  <div className="subj-card" key={k}>
+                    <div className="subj-head">
+                      <span className="subj-name">{l}</span>
+                      <button
+                        type="button"
+                        className={`night-badge-btn ${isNight ? 'is-night' : ''}`}
+                        onClick={() => toggleNight(k)}
+                        title={isNight ? 'موضوع له تدريب ليلى (اضغط للإلغاء)' : 'موضوع نهارى فقط (اضغط لتفعيل التدريب الليلى)'}
+                      >
+                        {isNight ? '🌙 دراسة ليلية' : '☀️ نهارى'}
+                      </button>
+                    </div>
+                    <div className="subj-input-row">
+                      <NumInput value={inst.pcts[k]} min={0} max={100} label={l} onCommit={n => set('pcts', { ...inst.pcts, [k]: n }, 'pcts')} />
+                      <span className="pct-sign">%</span>
+                    </div>
+                  </div>
+                );
+              })}
+              {(inst.customSubjects || []).filter(s => s.category === 'general').map(s => (
+                <div className="subj-card custom" key={s.id}>
+                  <div className="subj-head">
+                    <input
+                      type="text"
+                      className="custom-name-input"
+                      placeholder="اسم الموضوع..."
+                      value={s.name}
+                      onChange={e => updateCustomSubject(s.id, { name: e.target.value })}
+                      dir="rtl"
+                    />
+                    <button
+                      type="button"
+                      className={`night-badge-btn ${s.hasNight ? 'is-night' : ''}`}
+                      onClick={() => updateCustomSubject(s.id, { hasNight: !s.hasNight })}
+                      title={s.hasNight ? 'موضوع له تدريب ليلى' : 'نهارى فقط'}
+                    >
+                      {s.hasNight ? '🌙 دراسة ليلية' : '☀️ نهارى'}
+                    </button>
+                  </div>
+                  <div className="subj-input-row">
+                    <select
+                      className="cat-select"
+                      value={s.category}
+                      onChange={e => updateCustomSubject(s.id, { category: e.target.value as 'main' | 'general' })}
+                    >
+                      <option value="main">رئيسية</option>
+                      <option value="general">عامة</option>
+                    </select>
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <NumInput value={s.pct} min={0} max={100} label={s.name || 'النسبة'} onCommit={n => updateCustomSubject(s.id, { pct: n })} />
+                      <span className="pct-sign">%</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="mini danger"
+                      style={{ padding: '2px 8px', minHeight: '30px' }}
+                      onClick={() => removeCustomSubject(s.id)}
+                      title="حذف هذا الموضوع"
+                    >
+                      حذف
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </Field>
         <Field k="selectedMonth" label="شهر جدول الربط التفصيلى" hint="الشهر الذى يُقسَّم إلى أسابيع فى جدول الربط (المطلوب فى الامتحان).">

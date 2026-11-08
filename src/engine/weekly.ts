@@ -1,5 +1,5 @@
-import type { AgendaResult, LinkingResult, SlotEntry, SubjectKey, WeeklyExtract } from './types';
-import { ALL_KEYS } from './types';
+import type { AgendaResult, Instructions, LinkingResult, SlotEntry, SubjectKey, WeeklyExtract } from './types';
+import { getAllKeys } from './types';
 import { sum } from './rounding';
 
 interface Block { day: number; first: number; len: number }
@@ -14,7 +14,7 @@ function dayBlocks(dayIdx: number, hours: number, reserved: number): { day: Bloc
 }
 
 /** Page 4: weekly extract for one week, from the page-3 week split and the agenda days. */
-export function calculateWeekly(agenda: AgendaResult, linking: LinkingResult, week: number): WeeklyExtract | null {
+export function calculateWeekly(agenda: AgendaResult, linking: LinkingResult, week: number, inst?: Instructions): WeeklyExtract | null {
   const wr = agenda.weeks.find(w => w.week === week);
   if (!wr) return null;
   const block = linking.weeks.find(w => w.weekNumbers.includes(week));
@@ -22,11 +22,12 @@ export function calculateWeekly(agenda: AgendaResult, linking: LinkingResult, we
   const col = block.weekNumbers.indexOf(week);
   const cells = block.b.cells[col];
   const days = wr.days.slice(0, 6); // Sat..Thu
+  const allKeys = getAllKeys(inst);
 
   const rem: Record<SubjectKey, { day: number; night: number }> = Object.fromEntries(
-    ALL_KEYS.map(k => [k, { day: cells[k].day, night: cells[k].night }]),
+    allKeys.map(k => [k, { day: cells[k]?.day || 0, night: cells[k]?.night || 0 }]),
   ) as never;
-  const slots: Record<SubjectKey, SlotEntry[][]> = Object.fromEntries(ALL_KEYS.map(k => [k, days.map(() => [] as SlotEntry[])])) as never;
+  const slots: Record<SubjectKey, SlotEntry[][]> = Object.fromEntries(allKeys.map(k => [k, days.map(() => [] as SlotEntry[])])) as never;
   const push = (k: SubjectKey, di: number, first: number, len: number) => {
     const lectures = `${first}-${first + len - 1}`;
     slots[k][di].push({ hours: len, lectures, text: `${len} / ${lectures}` });
@@ -42,7 +43,7 @@ export function calculateWeekly(agenda: AgendaResult, linking: LinkingResult, we
     reservedDay.push(at);
   });
 
-  const free: SubjectKey[] = ALL_KEYS.filter(k => k !== 'fitness' && k !== 'education' && k !== 'security');
+  const free: SubjectKey[] = allKeys.filter(k => k !== 'fitness' && k !== 'education' && k !== 'security');
   const assign = (list: Block[], kind: 'day' | 'night', startNo: (b: Block) => number) => {
     for (const b of list) {
       let len = b.len;
@@ -65,10 +66,10 @@ export function calculateWeekly(agenda: AgendaResult, linking: LinkingResult, we
   assign(dayList, 'day', b => b.first);
   assign(nightList, 'night', b => b.first);
 
-  const rows = ALL_KEYS.map(k => ({ key: k, day: cells[k].day, night: cells[k].night, slots: slots[k] }));
-  const perDayHours = days.map((_, di) => sum(ALL_KEYS.map(k => sum(slots[k][di].map(s => s.hours)))));
+  const rows = allKeys.map(k => ({ key: k, day: cells[k]?.day || 0, night: cells[k]?.night || 0, slots: slots[k] }));
+  const perDayHours = days.map((_, di) => sum(allKeys.map(k => sum(slots[k][di].map(s => s.hours)))));
   const daysOk = days.every((d, di) => perDayHours[di] === d.day + d.night);
-  const subjOk = ALL_KEYS.every(k => sum(slots[k].flat().map(s => s.hours)) === cells[k].day + cells[k].night);
+  const subjOk = allKeys.every(k => sum(slots[k].flat().map(s => s.hours)) === (cells[k]?.day || 0) + (cells[k]?.night || 0));
   return {
     week, from: wr.days[0].date, to: wr.days[6].date,
     days: days.map(d => ({ date: d.date, dow: d.dow, day: d.day, night: d.night, kind: d.kind })),

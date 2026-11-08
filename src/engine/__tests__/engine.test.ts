@@ -182,3 +182,50 @@ describe('page 3 linking – no negative cells', () => {
     }
   });
 });
+
+describe('custom subjects & night study flag', () => {
+  it('supports adding custom main and general subjects with night flag', () => {
+    const customInst = {
+      ...F,
+      customSubjects: [
+        { id: 'custom_ew', name: 'حرب إلكترونية', category: 'general' as const, pct: 1, hasNight: true },
+        { id: 'custom_drone', name: 'طائرات موجهة', category: 'main' as const, pct: 2, hasNight: false },
+      ],
+    };
+    const cAgenda = calculateAgenda(customInst);
+    const cDist = calculateDistribution(customInst, cAgenda);
+    expect(cDist.checks.ok).toBe(true);
+    expect(cDist.cells['custom_ew']).toBeDefined();
+    expect(cDist.cells['custom_drone']).toBeDefined();
+    expect(cDist.cells['custom_ew'].night).toBeGreaterThan(0);
+    expect(cDist.cells['custom_drone'].night).toBe(0);
+
+    const cLink = calculateLinking(customInst, cAgenda, cDist);
+    expect(cLink.checks.ok).toBe(true);
+    for (const col of cLink.months.cells) {
+      expect(col['custom_ew'].day).toBeGreaterThanOrEqual(0);
+      expect(col['custom_ew'].night).toBeGreaterThanOrEqual(0);
+      expect(col['custom_drone'].day).toBeGreaterThanOrEqual(0);
+      expect(col['custom_drone'].night).toBeGreaterThanOrEqual(0);
+    }
+
+    const cWeekly = calculateWeekly(cAgenda, cLink, 20, customInst);
+    expect(cWeekly?.checks.ok).toBe(true);
+  });
+
+  it('supports custom nightKeys toggling on existing subjects', () => {
+    // Add night study to morale, remove from engineering
+    const customInst = {
+      ...F,
+      nightKeys: ['tactics', 'tech', 'shooting', 'topography', 'recon', 'chemical', 'morale'],
+    };
+    const cAgenda = calculateAgenda(customInst);
+    const cDist = calculateDistribution(customInst, cAgenda);
+    expect(cDist.checks.ok).toBe(true);
+    expect(cDist.cells.morale.night).toBeGreaterThan(0);
+    expect(cDist.cells.engineering.night).toBe(0);
+
+    const cLink = calculateLinking(customInst, cAgenda, cDist);
+    expect(cLink.checks.ok).toBe(true);
+  });
+});

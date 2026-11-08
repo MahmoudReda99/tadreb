@@ -1,11 +1,11 @@
 import type { AgendaResult, Cell, Cells, DistributionResult, Instructions, Level, SubjectKey } from './types';
-import { ALL_KEYS, NIGHT_KEYS } from './types';
+import { ALL_KEYS, getAllKeys, getMainKeys, getGeneralKeys, getNightKeys } from './types';
 import { weekLevels } from './agenda';
 import { nearestEven, sum } from './rounding';
 
-const emptyCells = (): Cells => Object.fromEntries(ALL_KEYS.map(k => [k, { day: 0, night: 0 }])) as Cells;
+const emptyCells = (keys: SubjectKey[] = ALL_KEYS): Cells => Object.fromEntries(keys.map(k => [k, { day: 0, night: 0 }])) as Cells;
 export const sumCells = (c: Cells, keys: SubjectKey[]): Cell => ({
-  day: sum(keys.map(k => c[k].day)), night: sum(keys.map(k => c[k].night)),
+  day: sum(keys.map(k => c[k]?.day || 0)), night: sum(keys.map(k => c[k]?.night || 0)),
 });
 
 /**
@@ -17,24 +17,48 @@ export function calculateDistribution(inst: Instructions, agenda: AgendaResult):
   const T = agenda.total;
   const mainTotal = nearestEven((T * p.mainPct) / 100);
   const generalTotal = T - mainTotal;
-  const tot: Record<SubjectKey, number> = Object.fromEntries(ALL_KEYS.map(k => [k, 0])) as Record<SubjectKey, number>;
+
+  const allKeys = getAllKeys(inst);
+  const mainKeys = getMainKeys(inst);
+  const generalKeys = getGeneralKeys(inst);
+  const nightKeys = getNightKeys(inst);
+
+  const tot: Record<SubjectKey, number> = Object.fromEntries(allKeys.map(k => [k, 0])) as Record<SubjectKey, number>;
 
   tot.fitness = agenda.fitness; tot.education = agenda.education; tot.security = agenda.security;
   for (const k of ['tactics', 'tech', 'discipline', 'topography', 'morale', 'recon', 'engineering', 'chemical', 'admin', 'history', 'intlLaw'] as SubjectKey[]) {
-    tot[k] = nearestEven((T * p[k as keyof typeof p]) / 100);
+    tot[k] = nearestEven((T * (p[k as keyof typeof p] ?? 0)) / 100);
   }
-  tot.shooting = mainTotal - tot.tactics - tot.tech - tot.fitness;
-  tot.infoWar = generalTotal - sum(['education', 'discipline', 'security', 'topography', 'morale', 'recon', 'engineering', 'chemical', 'admin', 'history', 'intlLaw'].map(k => tot[k as SubjectKey]));
+  for (const s of (inst.customSubjects || [])) {
+    tot[s.id] = nearestEven((T * (s.pct ?? 0)) / 100);
+  }
 
-  // night: ratio of the night hours to the hours of the seven night subjects
-  const nightSubjectsHours = sum(NIGHT_KEYS.map(k => tot[k]));
+  // shooting balances main
+  const otherMain = sum(mainKeys.filter(k => k !== 'shooting').map(k => tot[k] || 0));
+  tot.shooting = mainTotal - otherMain;
+
+  // infoWar balances general
+  const otherGeneral = sum(generalKeys.filter(k => k !== 'infoWar').map(k => tot[k] || 0));
+  tot.infoWar = generalTotal - otherGeneral;
+
+  // night: ratio of the night hours to the hours of active night subjects
+  const activeNightKeys = nightKeys.filter(k => allKeys.includes(k));
+  const nightSubjectsHours = sum(activeNightKeys.map(k => tot[k] || 0));
   const nightRatio = nightSubjectsHours ? agenda.night / nightSubjectsHours : 0;
-  const night: Record<SubjectKey, number> = Object.fromEntries(ALL_KEYS.map(k => [k, 0])) as Record<SubjectKey, number>;
-  for (const k of NIGHT_KEYS) if (k !== 'tech') night[k] = nearestEven(tot[k] * nightRatio);
-  night.tech = agenda.night - sum(NIGHT_KEYS.filter(k => k !== 'tech').map(k => night[k]));
+  const night: Record<SubjectKey, number> = Object.fromEntries(allKeys.map(k => [k, 0])) as Record<SubjectKey, number>;
 
-  const cells = emptyCells();
-  for (const k of ALL_KEYS) cells[k] = { day: tot[k] - night[k], night: night[k] };
+  // tech balances night hours if present; otherwise the first night subject balances
+  const nightBalancer = activeNightKeys.includes('tech') ? 'tech' : (activeNightKeys[0] || 'tactics');
+  for (const k of activeNightKeys) {
+    if (k !== nightBalancer) {
+      night[k] = Math.min(tot[k] || 0, nearestEven((tot[k] || 0) * nightRatio));
+    }
+  }
+  const otherNight = sum(activeNightKeys.filter(k => k !== nightBalancer).map(k => night[k] || 0));
+  night[nightBalancer] = Math.max(0, agenda.night - otherNight);
+
+  const cells = emptyCells(allKeys);
+  for (const k of allKeys) cells[k] = { day: Math.max(0, (tot[k] || 0) - (night[k] || 0)), night: night[k] || 0 };
 
   // specialised technical split into the three levels, from the hours of each level's period
   const lv = weekLevels(inst);
@@ -56,8 +80,8 @@ export function calculateDistribution(inst: Instructions, agenda: AgendaResult):
     centre: { day: d.centre, night: n.centre },
   };
 
-  const mainCell = sumCells(cells, ['tactics', 'tech', 'shooting', 'fitness']);
-  const generalCell = sumCells(cells, ['education', 'discipline', 'security', 'topography', 'morale', 'recon', 'engineering', 'chemical', 'admin', 'history', 'intlLaw', 'infoWar']);
+  const mainCell = sumCells(cells, mainKeys);
+  const generalCell = sumCells(cells, generalKeys);
   const dayOk = mainCell.day + generalCell.day === agenda.day;
   const nightOk = mainCell.night + generalCell.night === agenda.night;
   const mainOk = mainCell.day + mainCell.night === mainTotal;

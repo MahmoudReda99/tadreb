@@ -65,7 +65,7 @@ export default function App() {
       const agenda = calculateAgenda(inst);
       const dist = calculateDistribution(inst, agenda);
       const link = calculateLinking(inst, agenda, dist);
-      return { inst, agenda, dist, link, ex: calculateWeekly(agenda, link, inst.selectedWeek) };
+      return { inst, agenda, dist, link, ex: calculateWeekly(agenda, link, inst.selectedWeek, inst) };
     } catch (e) { console.error(e); return null; }
   }, [inst, view]);
 
