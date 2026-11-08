@@ -3,6 +3,44 @@ import { ALL_KEYS, GENERAL_KEYS } from './types';
 import { allocateEven, sum } from './rounding';
 import { monthNames } from './dates';
 
+/**
+ * Largest-remainder allocation in units of 2 that also respects per-column
+ * capacity caps.  Columns whose weight is 0 always get 0.  Remainder units
+ * that cannot fit anywhere (all caps exhausted) are silently dropped so that
+ * we never exceed a cap.
+ */
+function allocateEvenCapped(total: number, weights: number[], caps: number[]): number[] {
+  const out = weights.map(() => 0);
+  const W = sum(weights);
+  if (total <= 0 || W <= 0) return out;
+  // Work in 2-hour units; ignore the odd remainder for now
+  const odd = total % 2 !== 0;
+  const units = (total - (odd ? 1 : 0)) / 2;
+  const capUnits = caps.map(c => Math.floor(c / 2)); // cap in 2-h units
+  const q = weights.map(w => (units * w) / W);
+  const fl = q.map((x, i) => Math.min(Math.floor(x), capUnits[i]));
+  let left = units - sum(fl);
+  // Distribute remainder units in largest-fraction order, respecting caps
+  const order = q
+    .map((v, i) => ({ i, f: v - Math.floor(v) }))
+    .filter(o => weights[o.i] > 0)
+    .sort((a, b) => b.f - a.f || a.i - b.i);
+  for (let k = 0; left > 0 && k < order.length * 2; k++) {
+    const idx = order[k % order.length].i;
+    if (fl[idx] < capUnits[idx]) { fl[idx]++; left--; }
+  }
+  fl.forEach((u, i) => (out[i] = u * 2));
+  // Place the odd hour on the heaviest column that still has cap space
+  if (odd) {
+    let m = -1;
+    weights.forEach((w, i) => {
+      if (out[i] < caps[i] && (m < 0 || w > weights[m])) m = i;
+    });
+    if (m >= 0) out[m] += 1;
+  }
+  return out;
+}
+
 const emptyCells = (): Cells => Object.fromEntries(ALL_KEYS.map(k => [k, { day: 0, night: 0 }])) as Cells;
 
 /** move 2-hour units between columns of the night-subject rows until every column hits its target */
@@ -64,7 +102,12 @@ export function breakdown(rows: Cells, cols: ColumnTarget[]): Breakdown {
   const rowDay = (k: SubjectKey) => rows[k].day; const rowNight = (k: SubjectKey) => rows[k].night;
   const mainDayTot = sum(['tactics', 'tech', 'shooting', 'fitness'].map(k => rowDay(k as SubjectKey)));
   const mainNightTot = sum(['tactics', 'tech', 'shooting', 'fitness'].map(k => rowNight(k as SubjectKey)));
-  const mainDay = allocateEven(mainDayTot, dayW); const mainNight = allocateEven(mainNightTot, nightW);
+  // Cap: main subjects can never exceed the free hours left after mandatory constraint subjects.
+  // This prevents negative cells in weeks/months with very few hours (e.g. holiday weeks).
+  const maxMainDay = cols.map(c => Math.max(0, c.day - c.education - c.security));
+  const maxMainNight = cols.map(c => Math.max(0, c.night));
+  const mainDay = allocateEvenCapped(mainDayTot, dayW, maxMainDay);
+  const mainNight = allocateEvenCapped(mainNightTot, nightW, maxMainNight);
   const genDay = cols.map((c, i) => c.day - mainDay[i]); const genNight = cols.map((c, i) => c.night - mainNight[i]);
 
   const keysFixed: SubjectKey[] = ['fitness', 'education', 'security'];
@@ -79,9 +122,11 @@ export function breakdown(rows: Cells, cols: ColumnTarget[]): Breakdown {
     repair(shoot, rowsM, q);
     out.forEach((o, c) => { o.tactics[half] = rowsM[0][c]; o.tech[half] = rowsM[1][c]; o.shooting[half] = shoot[c]; });
   }
-  // general day: proportional subjects, information war balances the column
+  // general day: proportional subjects, information war balances the column.
+  // Each propDay subject is capped by the available general-day space to prevent iw from going negative.
   const propDay: SubjectKey[] = ['discipline', 'topography', 'morale', 'recon', 'engineering', 'chemical', 'admin', 'history', 'intlLaw'];
-  const pr = propDay.map(k => allocateEven(rows[k].day, dayW));
+  const availGenDay = cols.map((c, i) => Math.max(0, genDay[i] - c.education - c.security));
+  const pr = propDay.map(k => allocateEvenCapped(rows[k].day, dayW, availGenDay));
   const pq = propDay.map(k => quotaOf(rows[k].day, dayW));
   const iw = cols.map((c, i) => genDay[i] - c.education - c.security - sum(pr.map(r => r[i])));
   repair(iw, pr, pq);
@@ -89,7 +134,8 @@ export function breakdown(rows: Cells, cols: ColumnTarget[]): Breakdown {
   out.forEach((o, i) => (o.infoWar = { day: iw[i], night: 0 }));
   // general night: the four night subjects must fill each column's general night exactly
   const gNight: SubjectKey[] = ['topography', 'recon', 'engineering', 'chemical'];
-  const nrows = gNight.map(k => allocateEven(rows[k].night, nightW));
+  const maxGNight = genNight.map(v => Math.max(0, v));
+  const nrows = gNight.map(k => allocateEvenCapped(rows[k].night, nightW, maxGNight));
   balanceColumns(nrows, gNight.map(k => quotaOf(rows[k].night, nightW)), genNight);
   gNight.forEach((k, r) => out.forEach((o, i) => (o[k].night = nrows[r][i])));
 

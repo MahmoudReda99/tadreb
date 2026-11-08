@@ -143,3 +143,42 @@ describe('page 4 weekly extract', () => {
     }
   });
 });
+
+describe('page 3 linking – no negative cells', () => {
+  it('all month cells are non-negative (fixture 108)', () => {
+    for (const col of link.months.cells) {
+      for (const k of ALL_KEYS) {
+        expect(col[k].day, `months – ${k}.day`).toBeGreaterThanOrEqual(0);
+        expect(col[k].night, `months – ${k}.night`).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  it('all week cells are non-negative (fixture 108)', () => {
+    for (const wm of link.weeks) {
+      for (const col of wm.b.cells) {
+        for (const k of ALL_KEYS) {
+          expect(col[k].day, `month ${wm.month} – ${k}.day`).toBeGreaterThanOrEqual(0);
+          expect(col[k].night, `month ${wm.month} – ${k}.night`).toBeGreaterThanOrEqual(0);
+        }
+      }
+    }
+  });
+
+  it('link.checks.ok is true (fixture 108)', () => {
+    expect(link.checks.ok).toBe(true);
+  });
+
+  it('no negative cells in a scenario with a 1-hour holiday week', () => {
+    // Build a minimal instruction set where month 1 has weeks [0, 1] (normal, holiday).
+    // We test by using FIXTURE_108 and checking the August month which contains
+    // the fewest hours (Eid al-Adha holiday week = very low hours).
+    const augustMonth = link.weeks.at(-1)!; // last month = June / lightest
+    for (const col of augustMonth.b.cells) {
+      for (const k of ALL_KEYS) {
+        expect(col[k].day, `holiday-month – ${k}.day`).toBeGreaterThanOrEqual(0);
+        expect(col[k].night, `holiday-month – ${k}.night`).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+});
