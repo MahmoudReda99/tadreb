@@ -2,8 +2,9 @@ import type { AgendaResult, DistributionResult, Instructions, LinkingResult, Sub
 import { getAllKeys, getMainKeys, getGeneralKeys, getSubjectName, getSubjectShortName } from '../engine/types';
 import { DAYS_AR, addDays, dm, monthNames, parseDate } from '../engine/dates';
 import { auditDay, auditLink, auditSubject, auditSum, type Audit } from '../engine/audit';
-import { ar, h, KIND_COLORS, LEVEL_BG, LEVEL_SWATCH } from './format';
+import { ar, h, KIND_COLORS, LEVEL_BG } from './format';
 import { sum } from '../engine/rounding';
+import { formatArDate } from '../export/instructionsData';
 
 export type Inspect = (a: Audit) => void;
 const noop: Inspect = () => {};
@@ -48,10 +49,10 @@ export function AgendaSheet({ inst, agenda, onInspect = noop }: { inst: Instruct
     onInspect(auditSum(`الأسبوع ${w.week} — ${what === 'day' ? 'نهارى' : what === 'night' ? 'ليلى' : 'الإجمالى'}`, 'مجموع ساعات أيام الأسبوع', w.days.map(d => ({ label: dm(d.date), value: what === 'day' ? d.day : what === 'night' ? d.night : d.day + d.night }))));
   return (
     <div className="sheet" dir="rtl">
-      <Title>
+      <Title grade="٢٠ درجة">
         <div className="u">أجندة التدريب</div>
-        <div className="u">للفترة التدريبية الأولى من العام التدريبى {YEARS(inst)} م</div>
-        <div className="u">{inst.courseName || '—'}</div>
+        <div className="u">للفترة التدريبية {inst.firstWeek > 1 ? 'الثانية' : 'الأولى'} من العام التدريبى {YEARS(inst)} م</div>
+        <div className="u">{inst.courseName || 'الكتيبة الأولى / الفوج ٦٥٦ إشارة / ج ٣ ميد'}</div>
       </Title>
       <table className="grid agenda">
         <thead>
@@ -127,11 +128,33 @@ export function AgendaSheet({ inst, agenda, onInspect = noop }: { inst: Instruct
         </tbody>
       </table>
       <div className="foot">
-        <div className="legend">
-          {(['prep', 'short', 'long', 'personnel', 'friday', 'maintenance', 'holiday', 'reserve', 'ops', 'march', 'camp', 'ramadan'] as const).map(k => (
-            <span key={k} className="lg"><i style={{ background: KIND_COLORS[k].bg }} />{KIND_COLORS[k].label}</span>
-          ))}
-          {LEVEL_SWATCH.map(l => <span key={l.label} className="lg"><i style={{ background: l.bg }} />{l.label}</span>)}
+        <div className="legend-table-wrap">
+          <table className="legend-grid">
+            <tbody>
+              <tr>
+                <td style={{ background: KIND_COLORS.prep.bg, color: KIND_COLORS.prep.fg }}>فترة تحضيرية</td>
+                <td style={{ background: KIND_COLORS.short.bg, color: KIND_COLORS.short.fg }}>يوم قصير</td>
+                <td style={{ background: KIND_COLORS.long.bg, color: KIND_COLORS.long.fg }}>يوم طويل</td>
+                <td style={{ background: KIND_COLORS.personnel.bg, color: KIND_COLORS.personnel.fg }}>شئون أفراد</td>
+                <td style={{ background: KIND_COLORS.friday.bg, color: KIND_COLORS.friday.fg }}>راحة أسبوعية</td>
+                <td style={{ background: LEVEL_BG.individual, color: '#111' }}>مستوى فرد</td>
+                <td style={{ background: LEVEL_BG.centre, color: '#111' }}>مستوى مركز</td>
+              </tr>
+              <tr>
+                <td style={{ background: KIND_COLORS.maintenance.bg, color: KIND_COLORS.maintenance.fg }}>صيانة</td>
+                <td style={{ background: KIND_COLORS.holiday.bg, color: KIND_COLORS.holiday.fg }}>أجازة</td>
+                <td style={{ background: KIND_COLORS.reserve.bg, color: KIND_COLORS.reserve.fg }}>إسبوع إحتياط</td>
+                <td style={{ background: KIND_COLORS.ops.bg, color: KIND_COLORS.ops.fg }}>تد مهام عمليات</td>
+                <td style={{ background: KIND_COLORS.march.bg, color: KIND_COLORS.march.fg }}>طابور سير</td>
+                <td style={{ background: LEVEL_BG.crew, color: '#fff' }}>مستوى طاقم</td>
+                <td style={{ background: KIND_COLORS.camp.bg, color: KIND_COLORS.camp.fg }}>معسكر تد ليلى</td>
+              </tr>
+              <tr>
+                <td style={{ background: KIND_COLORS.ramadan.bg, color: KIND_COLORS.ramadan.fg }}>شهر رمضان</td>
+                <td colSpan={6} style={{ background: '#fff', border: 'none' }} />
+              </tr>
+            </tbody>
+          </table>
         </div>
         <div className="totals">
           <div>إجمالى عدد الساعات : ( <b>{ar(agenda.total)}</b> ) ساعة</div>
@@ -198,7 +221,7 @@ export function DistributionSheet({ inst, agenda, dist, onInspect = noop }: { in
   const genPctSum = genKeys.reduce((acc, k) => acc + pct(k), 0);
   return (
     <div className="sheet" dir="rtl">
-      <Title><div className="u">توزيع الساعات على الموضوعات</div></Title>
+      <Title grade="٢٠ درجة"><div className="u">توزيع الساعات على الموضوعات</div></Title>
       <table className="grid dist">
         <thead>
           <tr><th rowSpan={2}>م</th><th rowSpan={2}>الموضوع</th><th rowSpan={2}>النسبة المئوية</th><th rowSpan={2}>عدد الساعات</th><th rowSpan={2}>نهارى</th><th rowSpan={2}>ليلى</th>
@@ -286,9 +309,10 @@ export function LinkingSheet({ inst, agenda, dist, link, onInspect = noop }: { i
   const genPctSum = genKeys.reduce((acc, k) => acc + pct(k), 0);
   return (
     <div className="sheet" dir="rtl">
-      <Title>
+      <Title grade="٢٠ درجة">
         <div className="u">جدول ربط الساعات والموضوعات (نهارى / ليلى)</div>
-        <div className="u">عن الفترة التدريبية الأولى من العام التدريبى {YEARS(inst)} م</div>
+        <div className="u">عن الفترة التدريبية {inst.firstWeek > 1 ? 'الثانية' : 'الأولى'} من العام التدريبى {YEARS(inst)} م</div>
+        <div className="u">فى المدة من {formatArDate(inst.startSaturday)} الى {formatArDate(addDays(inst.startSaturday, (inst.totalWeeks || 26) * 7 - 1))}</div>
       </Title>
       <table className="grid link">
         <thead>
@@ -332,12 +356,15 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
     <div className="sheet framed" dir="rtl">
       <div className="mod">
         <span>وزارة الدفـــاع</span>
-        <span style={{ textAlign: 'left' }}>قائد الكتيبة ........................<br />صودق ،،،</span>
+        <span style={{ textAlign: 'left' }}>
+          <span className="grade u">( {ar(10)} درجات )</span>
+          <div style={{ marginTop: '4px' }}>صودق ،،،<br />قائد الكتيبة ........................</div>
+        </span>
       </div>
       <div className="sheet-title c">
         <div className="u">مستخرج الموضوعات والساعات عن الاسبوع رقم ( {ar(ex.week)} )</div>
-        <div className="u">من الفترة التدريبية الأولى للعام التدريبى {YEARS(inst)}</div>
-        <div className="u">خلال المدة من {ar(ex.from.split('-').reverse().join('/'))} إلى {ar(ex.to.split('-').reverse().join('/'))}</div>
+        <div className="u">من الفترة التدريبية {inst.firstWeek > 1 ? 'الثانية' : 'الأولى'} للعام التدريبى {YEARS(inst)}</div>
+        <div className="u">خلال المدة من {formatArDate(ex.from)} إلى {formatArDate(ex.to)}</div>
       </div>
       <table className="grid weekly">
         <thead><tr><th>م</th><th>الموضوعات</th><th>ساعات الأسبوع</th>{dn.map(d => <th key={d}>{d}</th>)}<th>ملاحظات</th></tr></thead>

@@ -11,17 +11,24 @@ import { parseInstructions } from './parser/parse';
 import { extractText } from './parser/extract';
 import { importJson, listProjects, removeProject, saveProject, type Project } from './db/database';
 import { exportPdf } from './export/pdf';
-import { exportWord } from './export/word';
+import { exportWord, type WordExportMode } from './export/word';
 import { Review } from './ui/Review';
 import { Inspector } from './ui/Inspector';
 import { AgendaSheet, DistributionSheet, LinkingSheet, WeeklySheet } from './ui/Sheets';
+import { InstructionsSheet } from './ui/InstructionsSheet';
 import { ExportPages, type Model } from './ui/ExportPages';
 import type { Audit } from './engine/audit';
 import { ar } from './ui/format';
 
 type View = 'upload' | 'review' | 'results';
-type Tab = 'agenda' | 'dist' | 'link' | 'week';
-const TABS: [Tab, string][] = [['agenda', 'الأجندة'], ['dist', 'التوزيع'], ['link', 'جدول الربط'], ['week', 'المستخرج الأسبوعى']];
+type Tab = 'inst' | 'agenda' | 'dist' | 'link' | 'week';
+const TABS: [Tab, string][] = [
+  ['inst', 'ورقة التعليمات والأسئلة'],
+  ['agenda', 'الأجندة'],
+  ['dist', 'التوزيع'],
+  ['link', 'جدول الربط'],
+  ['week', 'المستخرج الأسبوعى'],
+];
 
 /** scales the 1123px paper to the screen width (never below 0.6, then it scrolls) */
 function Paper({ children }: { children: React.ReactNode }) {
@@ -124,11 +131,11 @@ export default function App() {
     setExporting(true);
     try { await exportPdf(model); } catch (e) { setError(String(e)); } finally { setExporting(false); }
   }
-  async function doExportWord() {
+  async function doExportWord(mode: WordExportMode = 'all') {
     if (!model) return;
     setExportMenuOpen(false);
     setExporting(true);
-    try { await exportWord(model); } catch (e) { setError(String(e)); } finally { setExporting(false); }
+    try { await exportWord(model, mode); } catch (e) { setError(String(e)); } finally { setExporting(false); }
   }
   async function importFile(f: File) {
     try { open(importJson(await f.text())); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -227,11 +234,25 @@ export default function App() {
                       <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>مستند PDF للعرض والطباعة</small>
                     </div>
                   </button>
-                  <button type="button" className="export-item" onClick={doExportWord}>
+                  <button type="button" className="export-item" onClick={() => doExportWord('all')}>
+                    <span className="icon">📋</span>
+                    <div>
+                      <b>تصدير Word — المستند الكامل</b>
+                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>وثيقة التعليمات والأسئلة + شيتات الحل الأربعة</small>
+                    </div>
+                  </button>
+                  <button type="button" className="export-item" onClick={() => doExportWord('sheets')}>
                     <span className="icon">📝</span>
                     <div>
-                      <b>تصدير Word</b>
-                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>مستند وورد قابل للتعديل (.doc)</small>
+                      <b>تصدير Word — شيتات الحل فقط</b>
+                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>الأجندة، التوزيع، جدول الربط، المستخرج</small>
+                    </div>
+                  </button>
+                  <button type="button" className="export-item" onClick={() => doExportWord('instructions')}>
+                    <span className="icon">📑</span>
+                    <div>
+                      <b>تصدير Word — ورقة التعليمات فقط</b>
+                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>وثيقة التعليمات التنظيمية والأسئلة (A4 عمودى)</small>
                     </div>
                   </button>
                 </div>
@@ -259,6 +280,7 @@ export default function App() {
                 {tab === 'link' && <span>التفصيل: {monthLabel}</span>}
               </div>
               <p className="hint">اضغط أى رقم لعرض خطوات حسابه.</p>
+              {tab === 'inst' && <Paper><InstructionsSheet inst={inst} /></Paper>}
               {tab === 'agenda' && <Paper><AgendaSheet inst={inst} agenda={model.agenda} onInspect={setAudit} /></Paper>}
               {tab === 'dist' && <Paper><DistributionSheet inst={inst} agenda={model.agenda} dist={model.dist} onInspect={setAudit} /></Paper>}
               {tab === 'link' && <Paper><LinkingSheet inst={inst} agenda={model.agenda} dist={model.dist} link={model.link} onInspect={setAudit} /></Paper>}
