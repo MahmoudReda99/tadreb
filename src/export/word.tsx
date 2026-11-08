@@ -1,25 +1,18 @@
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import type { Model } from '../ui/ExportPages';
-import { ExportPages } from '../ui/ExportPages';
-import { InstructionsSheet } from '../ui/InstructionsSheet';
-
-export type WordExportMode = 'all' | 'sheets' | 'instructions';
+import { ExportAllPages } from '../ui/ExportPages';
 
 /**
- * Exports the training documents as an authentic Microsoft Word document (.doc)
- * formatted to match the Egyptian Armed Forces Signal Corps official exam specification.
- * Supports:
- * - 'all': Question & Instructions paper (Portrait) + 4 Solution Sheets (Landscape)
- * - 'sheets': 4 Solution Sheets only (Landscape)
- * - 'instructions': Question & Instructions paper only (Portrait)
- *
+ * Exports the complete military training exam document as a Microsoft Word document (.doc)
+ * matching the Egyptian Armed Forces Signal Corps official specification:
+ * - Pages 1 & 2: Exam Questions & Instructions Paper (A4 Portrait)
+ * - Pages 3 to 6: The four solved training sheets (A4 Landscape)
  * 100% offline, zero external dependencies.
  */
 export async function exportWord(
   m: Model,
-  mode: WordExportMode = 'all',
-  filename?: string
+  filename = 'اجندة-التدريب-القتالى-كاملة.doc'
 ): Promise<void> {
   const host = document.createElement('div');
   host.className = 'export-host';
@@ -30,65 +23,25 @@ export async function exportWord(
   const root = createRoot(host);
 
   try {
-    let defaultFilename = 'اجندة-التدريب-القتالى-كاملة.doc';
-    if (mode === 'sheets') defaultFilename = 'شيتات-التدريب-القتالى.doc';
-    if (mode === 'instructions') defaultFilename = 'وثيقة-التعليمات-التنظيمية.doc';
-    const finalFilename = filename || defaultFilename;
+    flushSync(() => root.render(<ExportAllPages m={m} />));
+    const pages = Array.from(host.querySelectorAll<HTMLElement>('.paper'));
+    if (pages.length < 6) return;
 
-    let instructionsHtml = '';
-    let sheetsHtml = '';
-
-    // Render instructions paper if needed
-    if (mode === 'all' || mode === 'instructions') {
-      flushSync(() => root.render(<InstructionsSheet inst={m.inst} />));
-      const instEl = host.querySelector<HTMLElement>('.inst-sheet');
-      if (instEl) {
-        instructionsHtml = `
+    // Portrait pages: Page 1 and Page 2
+    const portraitPagesHtml = [pages[0], pages[1]].map(p => `
 <div class="page-outer">
   <div class="frame-portrait">
-    ${instEl.innerHTML}
+    ${p.innerHTML}
   </div>
-</div>`;
-      }
-    }
+</div>`).join('\n<br clear="all" style="page-break-before:always" />\n');
 
-    // Render 4 sheets if needed
-    if (mode === 'all' || mode === 'sheets') {
-      flushSync(() => root.render(<ExportPages m={m} />));
-      const pages = Array.from(host.querySelectorAll<HTMLElement>('.paper:not(.portrait-paper)'));
-      const renderedSheets = pages.map(p => `
+    // Landscape pages: Pages 3, 4, 5, 6
+    const landscapePagesHtml = [pages[2], pages[3], pages[4], pages[5]].map(p => `
 <div class="page-outer">
   <div class="frame-landscape">
     ${p.innerHTML}
   </div>
-</div>`);
-      sheetsHtml = renderedSheets.join(
-        '\n<br clear="all" style="page-break-before:always;mso-break-type:section-break" />\n'
-      );
-    }
-
-    // Build the Word document with appropriate sections
-    let bodySections = '';
-    if (mode === 'all') {
-      bodySections = `
-<div class="SectionPortrait">
-  ${instructionsHtml}
-</div>
-<br clear="all" style="page-break-before:always;mso-break-type:section-break" />
-<div class="SectionLandscape">
-  ${sheetsHtml}
-</div>`;
-    } else if (mode === 'instructions') {
-      bodySections = `
-<div class="SectionPortrait">
-  ${instructionsHtml}
-</div>`;
-    } else {
-      bodySections = `
-<div class="SectionLandscape">
-  ${sheetsHtml}
-</div>`;
-    }
+</div>`).join('\n<br clear="all" style="page-break-before:always" />\n');
 
     const docHtml = `<!DOCTYPE html>
 <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40' dir='rtl'>
@@ -108,7 +61,7 @@ export async function exportWord(
 @page SectionPortrait {
   size: 210mm 297mm;
   mso-page-orientation: portrait;
-  margin: 12mm 14mm 12mm 14mm;
+  margin: 10mm 12mm 10mm 12mm;
   mso-header-margin: 0mm;
   mso-footer-margin: 0mm;
 }
@@ -143,16 +96,16 @@ body {
   margin: 0 auto;
 }
 
-/* Double military border frame */
+/* Authentic military double border */
 .frame-portrait {
-  border: 4pt double #000000;
-  padding: 14pt 18pt;
-  min-height: 255mm;
+  border: 4.5pt double #000000;
+  padding: 12pt 16pt;
+  min-height: 260mm;
   box-sizing: border-box;
 }
 
 .frame-landscape {
-  border: 4pt double #000000;
+  border: 4.5pt double #000000;
   padding: 8pt 10pt;
   min-height: 185mm;
   box-sizing: border-box;
@@ -498,7 +451,13 @@ table.grid th {
 </style>
 </head>
 <body>
-${bodySections}
+<div class="SectionPortrait">
+  ${portraitPagesHtml}
+</div>
+<br clear="all" style="page-break-before:always;mso-break-type:section-break" />
+<div class="SectionLandscape">
+  ${landscapePagesHtml}
+</div>
 </body>
 </html>`;
 
@@ -508,7 +467,7 @@ ${bodySections}
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = finalFilename;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     link.remove();

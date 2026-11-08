@@ -11,12 +11,12 @@ import { parseInstructions } from './parser/parse';
 import { extractText } from './parser/extract';
 import { importJson, listProjects, removeProject, saveProject, type Project } from './db/database';
 import { exportPdf } from './export/pdf';
-import { exportWord, type WordExportMode } from './export/word';
+import { exportWord } from './export/word';
 import { Review } from './ui/Review';
 import { Inspector } from './ui/Inspector';
 import { AgendaSheet, DistributionSheet, LinkingSheet, WeeklySheet } from './ui/Sheets';
 import { InstructionsSheet } from './ui/InstructionsSheet';
-import { ExportPages, type Model } from './ui/ExportPages';
+import { ExportAllPages, type Model } from './ui/ExportPages';
 import type { Audit } from './engine/audit';
 import { ar } from './ui/format';
 
@@ -131,11 +131,11 @@ export default function App() {
     setExporting(true);
     try { await exportPdf(model); } catch (e) { setError(String(e)); } finally { setExporting(false); }
   }
-  async function doExportWord(mode: WordExportMode = 'all') {
+  async function doExportWord() {
     if (!model) return;
     setExportMenuOpen(false);
     setExporting(true);
-    try { await exportWord(model, mode); } catch (e) { setError(String(e)); } finally { setExporting(false); }
+    try { await exportWord(model); } catch (e) { setError(String(e)); } finally { setExporting(false); }
   }
   async function importFile(f: File) {
     try { open(importJson(await f.text())); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -231,28 +231,14 @@ export default function App() {
                     <span className="icon">📄</span>
                     <div>
                       <b>تصدير PDF</b>
-                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>مستند PDF للعرض والطباعة</small>
+                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>وثيقة التعليمات + الأجندة والشيتات محلولة (.pdf)</small>
                     </div>
                   </button>
-                  <button type="button" className="export-item" onClick={() => doExportWord('all')}>
-                    <span className="icon">📋</span>
-                    <div>
-                      <b>تصدير Word — المستند الكامل</b>
-                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>وثيقة التعليمات والأسئلة + شيتات الحل الأربعة</small>
-                    </div>
-                  </button>
-                  <button type="button" className="export-item" onClick={() => doExportWord('sheets')}>
+                  <button type="button" className="export-item" onClick={doExportWord}>
                     <span className="icon">📝</span>
                     <div>
-                      <b>تصدير Word — شيتات الحل فقط</b>
-                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>الأجندة، التوزيع، جدول الربط، المستخرج</small>
-                    </div>
-                  </button>
-                  <button type="button" className="export-item" onClick={() => doExportWord('instructions')}>
-                    <span className="icon">📑</span>
-                    <div>
-                      <b>تصدير Word — ورقة التعليمات فقط</b>
-                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>وثيقة التعليمات التنظيمية والأسئلة (A4 عمودى)</small>
+                      <b>تصدير Word</b>
+                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>وثيقة التعليمات + الأجندة والشيتات محلولة (.doc)</small>
                     </div>
                   </button>
                 </div>
@@ -285,7 +271,7 @@ export default function App() {
               {tab === 'dist' && <Paper><DistributionSheet inst={inst} agenda={model.agenda} dist={model.dist} onInspect={setAudit} /></Paper>}
               {tab === 'link' && <Paper><LinkingSheet inst={inst} agenda={model.agenda} dist={model.dist} link={model.link} onInspect={setAudit} /></Paper>}
               {tab === 'week' && <Paper><WeeklySheet inst={inst} ex={model.ex} onInspect={setAudit} /></Paper>}
-              <div className="print-root"><ExportPages m={model} /></div>
+              <div className="print-root"><ExportAllPages m={model} /></div>
             </>
           )}
         </main>

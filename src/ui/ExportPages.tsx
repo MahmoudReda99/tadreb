@@ -1,6 +1,6 @@
 import type { AgendaResult, DistributionResult, Instructions, LinkingResult, WeeklyExtract } from '../engine/types';
 import { AgendaSheet, DistributionSheet, LinkingSheet, WeeklySheet } from './Sheets';
-import { InstructionsSheet } from './InstructionsSheet';
+import { InstructionsPage1, InstructionsPage2 } from './InstructionsSheet';
 
 export interface Model {
   inst: Instructions;
@@ -22,11 +22,12 @@ export function ExportPages({ m }: { m: Model }) {
   );
 }
 
-/** all pages including the official instructions question paper (portrait) and the four solution pages (landscape) */
+/** all pages: instructions pages (portrait) + the four solution pages (landscape) */
 export function ExportAllPages({ m }: { m: Model }) {
   return (
     <>
-      <div className="paper portrait-paper page-frame"><InstructionsSheet inst={m.inst} /></div>
+      <div className="paper portrait-paper page-frame"><InstructionsPage1 inst={m.inst} /></div>
+      <div className="paper portrait-paper page-frame"><InstructionsPage2 inst={m.inst} /></div>
       <div className="paper page-frame"><AgendaSheet inst={m.inst} agenda={m.agenda} /></div>
       <div className="paper page-frame"><DistributionSheet inst={m.inst} agenda={m.agenda} dist={m.dist} /></div>
       <div className="paper page-frame"><LinkingSheet inst={m.inst} agenda={m.agenda} dist={m.dist} link={m.link} /></div>

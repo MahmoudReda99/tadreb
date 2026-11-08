@@ -26,25 +26,25 @@ const COLOR_MAP = [
   { letter: 'م', label: 'شهر رمضان', color: 'لبنى', swatch: '#7dd3fc' },
 ];
 
-export function InstructionsSheet({ inst }: { inst: Instructions }) {
+/** Page 1 of the official question/instructions paper */
+export function InstructionsPage1({ inst }: { inst: Instructions }) {
   const d = extractInstructionsData(inst);
-
   const defOrd = WEEK_ORDINALS[d.marchWeekDefault] || `رقم (${ar(d.marchWeekDefault)})`;
   const excOrd = WEEK_ORDINALS[d.marchWeekExceptionWeek] || `رقم (${ar(d.marchWeekExceptionWeek)})`;
 
   return (
-    <div className="sheet inst-sheet framed-doc" dir="rtl">
+    <div className="sheet inst-sheet inst-page" dir="rtl">
       {/* Student Box */}
       <table className="inst-header-table student-box">
         <tbody>
           <tr>
-            <td style={{ width: '40%' }}>
-              <div><b>الرتبة /</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div>
-              <div style={{ marginTop: '8px' }}><b>الإسم /</b></div>
+            <td style={{ width: '38%' }}>
+              <div><b>الرتبة /</b></div>
+              <div style={{ marginTop: '10px' }}><b>اسم /</b></div>
             </td>
-            <td style={{ width: '35%' }}>
+            <td style={{ width: '37%' }}>
               <div><b>الفرقة /</b></div>
-              <div style={{ marginTop: '8px' }}><b>الرقم السرى / ............</b></div>
+              <div style={{ marginTop: '10px' }}><b>الرقم السرى /</b></div>
             </td>
             <td style={{ width: '25%', verticalAlign: 'top' }}>
               <div><b>رقم الجلوس /</b></div>
@@ -55,26 +55,26 @@ export function InstructionsSheet({ inst }: { inst: Instructions }) {
 
       {/* Warning Bar */}
       <div className="inst-warning-band">
-        لا تـكـتــــب خـلــــف هـــذا الـجــــزء
+        لا تـكـتــــــب خـلـــــف هــذا الـجـــــزء
       </div>
 
       {/* Exam Header Table */}
       <table className="inst-header-table exam-info-box">
         <tbody>
           <tr>
-            <td style={{ width: '35%', textAlign: 'right' }}>
+            <td style={{ width: '38%', textAlign: 'right' }}>
               <div><b>قيادة المعاهد العسكرية التخصصية</b></div>
-              <div><b>معهد الإشارة</b></div>
-              <div><b>قسم الامتحانات</b></div>
+              <div><b>معهـــــــــــــــــد الإشــــــــــــــــــارة</b></div>
+              <div><b>قســــــــــــــــم الامتحـــــــــــــــــانات</b></div>
             </td>
-            <td style={{ width: '35%', textAlign: 'center' }}>
-              <div style={{ fontSize: '11px', color: '#555' }}>( {d.examCode} )</div>
-              <div style={{ fontWeight: 'bold', margin: '4px 0', fontSize: '13px' }}>ممنوع اصطحاب الهواتف والساعات الذكية</div>
+            <td style={{ width: '34%', textAlign: 'center' }}>
+              <div style={{ fontSize: '11px', color: '#333' }}>( {d.examCode} )</div>
+              <div style={{ fontWeight: 'bold', margin: '4px 0', fontSize: '12px' }}>ممنوع اصطحاب الهواتف والساعات الذكية</div>
               <div><b>الرقم السرى /</b></div>
             </td>
-            <td style={{ width: '30%', textAlign: 'left', direction: 'rtl' }}>
-              <div>الزمن ( <b>{ar(d.durationMinutes)}</b> ) دقيقة</div>
-              <div>الدرجة ( <b>{ar(d.totalGrade)}</b> ) درجة</div>
+            <td style={{ width: '28%', textAlign: 'left', direction: 'rtl' }}>
+              <div>الــــزمن ( <b>{ar(d.durationMinutes)}</b> ) دقيقــــة</div>
+              <div>الدرجـــة ( <b>{ar(d.totalGrade)}</b> ) درجـــــة</div>
               <div style={{ marginTop: '4px' }}><b>{d.officerName}</b></div>
             </td>
           </tr>
@@ -93,13 +93,13 @@ export function InstructionsSheet({ inst }: { inst: Instructions }) {
 
       {/* Section 1 */}
       <div className="inst-sec">
-        <div className="inst-sec-head">أولاً : تنظيم التدريب :</div>
+        <div className="inst-sec-head">أولا : تنظيم التدريب :</div>
         <ol className="inst-list">
           <li>
-            الفترة التدريبية {d.periodName} للعام التدريبى {d.yearLabel} فى المدة من <b>{d.startDate}</b> حتى <b>{d.endDate}</b> من الأسبوع رقم (<b>{ar(d.firstWeek)}</b>) إلى الأسبوع رقم (<b>{ar(d.lastWeek)}</b>) .
+            الفترة التدريبية {d.periodName} فى المدة من <b>{d.startDate}</b> حتى <b>{d.endDate}</b> من الأسبوع رقم (<b>{ar(d.firstWeek)}</b>) حتى الأسبوع رقم (<b>{ar(d.lastWeek)}</b>) .
           </li>
           <li>
-            الفترة التحضيرية {d.periodName} فى الأسبوع رقم (<b>{d.prepWeeks.map(ar).join(' ، ')}</b>) خلال المدة من <b>{d.prepStartDate}</b> حتى <b>{d.prepEndDate}</b> .
+            الفترة التحضيرية فى الأسبوع رقم (<b>{d.prepWeeks.map(ar).join(' ، ')}</b>) خلال المدة من <b>{d.prepStartDate}</b> حتى <b>{d.prepEndDate}</b> .
           </li>
           <li>
             التدريب على مهام العمليات فى الأسبوع رقم (<b>{d.opsWeeks.map(ar).join(' ، ')}</b>) خلال المدة من <b>{d.opsStartDate}</b> حتى <b>{d.opsEndDate}</b> .
@@ -118,7 +118,7 @@ export function InstructionsSheet({ inst }: { inst: Instructions }) {
             <div className="inst-holidays-grid">
               {d.holidays.map(h => (
                 <div key={h.letter + h.name} className="inst-holiday-item">
-                  <b>{h.letter} -</b> {h.name} : <span>{h.dateStr}</span> .
+                  <b>{h.letter}-</b> {h.name} : <span>{h.dateStr}</span> .
                 </div>
               ))}
             </div>
@@ -129,22 +129,19 @@ export function InstructionsSheet({ inst }: { inst: Instructions }) {
             </li>
           )}
           <li>
-            <b>(طابور السير + الأمن الحربى) :</b>
-            <div>
-              تخصيص يوم قصير كامل من الأسبوع {defOrd} من كل شهر (يوم {d.marchDayOfWeek}) ({ar(d.shortDayHours)} ساعات) [ عدا شهر ({d.marchWeekExceptionMonth}) (يتم تخصيص يوم السبت من الأسبوع {excOrd}) ] لصالح (طابور السير + الأمن الحربى) كالآتى :
-            </div>
+            <b>(طابور السير + الأمن الحربى) :</b> تخصيص يوم قصير كامل من الأسبوع {defOrd} من كل شهر (يوم {d.marchDayOfWeek}) ({ar(d.shortDayHours)} ساعات) [ عدا شهر ({d.marchWeekExceptionMonth}) (يتم تخصيص يوم السبت من الأسبوع {excOrd}) ] لصالح (طابور السير + الأمن الحربى) كالأتى :
             <div className="inst-sub-list">
               {d.marchSecuritySchedule.slice(0, 4).map((s, idx) => {
                 const letter = ['أ', 'ب', 'ج', 'د'][idx];
                 const ord = ['الأول', 'الثانى', 'الثالث', 'الرابع'][idx];
                 return (
                   <div key={idx}>
-                    {letter} - الشهر {ord} (<b>{ar(s.marchHours)}</b>) ساعة طابور سير + (<b>{s.securityHours ? ar(s.securityHours) : '-'}</b>) ساعة أمن حربى .
+                    {letter} - الشهر {ord} (<b>{ar(s.marchHours)}</b>) طابور سير + (<b>{s.securityHours ? ar(s.securityHours) : '٠'}</b>) أمن حربى .
                   </div>
                 );
               })}
-              <div>هـ - يكرر الشهر الخامس والسادس مثل الشهر الأول والثانى .</div>
-              <div>و - ساعات طابور السير تحتسب وتضاف إلى ساعات اللياقة البدنية .</div>
+              <div>هـ- يكرر الشهر الخامس و السادس .</div>
+              <div>و- ساعات طابور السير تحتسب وتضاف إلى ساعات اللياقة البدنية .</div>
             </div>
           </li>
         </ol>
@@ -152,18 +149,18 @@ export function InstructionsSheet({ inst }: { inst: Instructions }) {
 
       {/* Section 2 */}
       <div className="inst-sec">
-        <div className="inst-sec-head">ثانياً : حساب أيام وساعات التدريب القتالى :</div>
+        <div className="inst-sec-head">ثانيا : حساب أيام وساعات التدريب القتالى :</div>
         <ol className="inst-list">
           <li>يوم (السبت والثلاثاء) يوم قصير (<b>{ar(d.shortDayHours)}</b>) ساعة نهاراً .</li>
           <li>يوم (الأحد والأربعاء) يوم طويل (<b>{ar(d.longDayHours)}</b>) ساعة [ (<b>{ar(d.longDayDayHours)}</b>) ساعة نهاراً + (<b>{ar(d.longDayNightHours)}</b>) ساعة ليلاً ] .</li>
-          <li>يوم الإثنين يوم صيانة (<b>{ar(d.maintenanceHours)}</b>) ساعة (لياقة بدنية) .</li>
-          <li>يوم الخميس يوم شئون أفراد (<b>{ar(d.personnelHours)}</b>) ساعة (تعليم منضم) .</li>
+          <li>يوم الإثنين يوم صيانة (<b>{ar(d.maintenanceHours)}</b>) ساعة .</li>
+          <li>يوم الخميس يوم شئون أفراد (<b>{ar(d.personnelHours)}</b>) ساعة .</li>
         </ol>
       </div>
 
       {/* Section 3 */}
       <div className="inst-sec">
-        <div className="inst-sec-head">ثالثاً : الموضوعات التى بها تدريب ليلى :</div>
+        <div className="inst-sec-head">ثالثا : الموضوعات التى بها تدريب ليلى :</div>
         <div className="inst-night-grid">
           {d.nightSubjects.map((s, idx) => (
             <div key={idx} className="inst-night-item">
@@ -172,10 +169,19 @@ export function InstructionsSheet({ inst }: { inst: Instructions }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
 
+/** Page 2 of the official question/instructions paper */
+export function InstructionsPage2({ inst }: { inst: Instructions }) {
+  const d = extractInstructionsData(inst);
+
+  return (
+    <div className="sheet inst-sheet inst-page" dir="rtl">
       {/* Section 4 */}
       <div className="inst-sec">
-        <div className="inst-sec-head">رابعاً : المطالب :</div>
+        <div className="inst-sec-head">رابعا : المطالب :</div>
         <ol className="inst-list">
           <li>
             <b>تلوين الأجندة وحساب إجمالى ساعات التدريب القتالى (نهاراً - ليلاً) (فرد / طاقم / مركز) طبقاً للألوان الآتية :</b>
@@ -185,19 +191,19 @@ export function InstructionsSheet({ inst }: { inst: Instructions }) {
                   <span className="col-swatch" style={{ background: c.swatch }} />
                   <span className="col-let"><b>{c.letter} -</b></span>
                   <span className="col-lbl">{c.label} :</span>
-                  <span className="col-val"><b>{c.color}</b></span>
+                  <span className="col-val"><b>{c.color}</b> .</span>
                 </div>
               ))}
             </div>
           </li>
           <li>
-            توزيع الساعات على الموضوعات (نهاراً / ليلاً) ، حساب ساعات مستويات التدريب (فرد / طاقم / مركز) .
+            توزيع الساعات على الموضوعات (نهاراً / ليلاً) ، (فرد / طاقم / مركز) .
           </li>
           <li>
             عمل جدول لربط الساعات الإجمالى عن الفترة التدريبية {d.periodName} من العام التدريبى {d.yearLabel} عن إجمالى الساعات وإجمالى كل شهر .
           </li>
           <li>
-            عمل جدول ربط الساعات عن شهر (<b>{d.selectedMonthName}</b>) {d.yearLabel} .
+            عمل جدول ربط الساعات عن شهر <b>{d.selectedMonthName}</b> {d.yearLabel} .
           </li>
           <li>
             عمل مستخرج الموضوعات و الساعات عن الأسبوع رقم (<b>{ar(d.selectedWeek)}</b>) من <b>{d.selectedWeekStart}</b> حتى <b>{d.selectedWeekEnd}</b> .
@@ -209,7 +215,7 @@ export function InstructionsSheet({ inst }: { inst: Instructions }) {
       <div className="inst-note-box">
         <b>ملحوظة :</b>
         <p>
-          يتم تخطيط عدد (<b>{ar(d.campWeeks.length)}</b>) أسبوع معسكر تدريب ليلى لإستعواض ساعات التدريب الليلى (أسبوع فى مستوى الطاقم - أسبوع فى مستوى المركز) فى الأسبوع رقم ( <b>{d.campWeeks.map(ar).join(' ، ')}</b> ) علما بأن ساعات التدريب بمعسكر التدريب الليلى [ (<b>{ar(d.campDayHours)}</b>) ساعة نهاراً - <b>{ar(d.campNightHours)}</b> ساعة ليلاً باجمالى (<b>{ar(d.campTotalHours)} ساعة</b>) (٥ أيام × ١١ ساعة) ] وأول طابور لياقة بدنية .
+          - يتم تخطيط عدد (<b>{ar(d.campWeeks.length)}</b>) أسبوع معسكر تدريب ليلى لإستعواض ساعات التدريب الليلى (أسبوع فى فترة الطاقم - أسبوع فى فترة المركز) فى الأسبوع رقم ( <b>{d.campWeeks.map(ar).join(' ، ')}</b> ) علما بأن ساعات التدريب بمعسكر التدريب الليلى [ (<b>{ar(d.campDayHours)}</b> ساعة نهاراً - <b>{ar(d.campNightHours)}</b> ساعة ليلاً) بإجمالى (<b>{ar(d.campTotalHours)} ساعة</b>) (٥ أيام × ١١ ساعة) ] وأول طابور لياقة بدنية .
         </p>
       </div>
 
@@ -218,5 +224,19 @@ export function InstructionsSheet({ inst }: { inst: Instructions }) {
         مع أطيب التمنيات بالنجاح والتوفيق ،،،
       </div>
     </div>
+  );
+}
+
+/** Unified view for on-screen inspection */
+export function InstructionsSheet({ inst }: { inst: Instructions }) {
+  return (
+    <>
+      <div className="inst-page-wrapper">
+        <InstructionsPage1 inst={inst} />
+      </div>
+      <div className="inst-page-wrapper" style={{ marginTop: '24px' }}>
+        <InstructionsPage2 inst={inst} />
+      </div>
+    </>
   );
 }
