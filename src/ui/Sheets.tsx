@@ -194,6 +194,8 @@ export function DistributionSheet({ inst, agenda, dist, onInspect = noop }: { in
     );
   };
   const gparts = (f: (c: { day: number; night: number }) => number) => [{ label: 'الموضوعات الرئيسية', value: f(dist.mainCell) }, { label: 'الموضوعات العامة', value: f(dist.generalCell) }];
+  const mainPctSum = mainKeys.reduce((acc, k) => acc + pct(k), 0);
+  const genPctSum = genKeys.reduce((acc, k) => acc + pct(k), 0);
   return (
     <div className="sheet" dir="rtl">
       <Title><div className="u">توزيع الساعات على الموضوعات</div></Title>
@@ -204,12 +206,12 @@ export function DistributionSheet({ inst, agenda, dist, onInspect = noop }: { in
           <tr>{[0, 1, 2].map(i => <><th key={'n' + i}>ن</th><th key={'l' + i}>ل</th></>)}</tr>
         </thead>
         <tbody>
-          <tr className="band"><td colSpan={12}>الموضوعات الرئيسية : {ar(p.mainPct)} %</td></tr>
+          <tr className="band"><td colSpan={12}>الموضوعات الرئيسية : {ar(mainPctSum || p.mainPct)} %</td></tr>
           {mainKeys.map(row)}
-          {sub('إجمالى الموضوعات الرئيسية', dist.mainCell, p.mainPct, mainKeys)}
-          <tr className="band"><td colSpan={12}>الموضوعات العامة : {ar(100 - p.mainPct)} %</td></tr>
+          {sub('إجمالى الموضوعات الرئيسية', dist.mainCell, mainPctSum || p.mainPct, mainKeys)}
+          <tr className="band"><td colSpan={12}>الموضوعات العامة : {ar(genPctSum || (100 - p.mainPct))} %</td></tr>
           {genKeys.map(row)}
-          {sub('إجمالى الموضوعات العامة', dist.generalCell, 100 - p.mainPct, genKeys)}
+          {sub('إجمالى الموضوعات العامة', dist.generalCell, genPctSum || (100 - p.mainPct), genKeys)}
           <tr className="sub grand"><td colSpan={2}>الإجمالى</td><td>١٠٠ %</td>
             <td><Num v={dist.total} on={dsum('الإجمالى — عدد الساعات', 'الرئيسية + العامة، وتساوى إجمالى ساعات الأجندة', gparts(c => c.day + c.night))} /></td>
             <td><Num v={agenda.day} on={dsum('الإجمالى — نهارى', 'الرئيسية + العامة، وتساوى ساعات الأجندة النهارية', gparts(c => c.day))} /></td>
@@ -280,6 +282,8 @@ export function LinkingSheet({ inst, agenda, dist, link, onInspect = noop }: { i
       onD={lsum(`الإجمالى — ${name} — نهارى`, 'الرئيسية + العامة، وتساوى ساعات هذا العمود فى الأجندة', [{ label: 'الموضوعات الرئيسية', value: b.main[col].day }, { label: 'الموضوعات العامة', value: b.general[col].day }])}
       onN={lsum(`الإجمالى — ${name} — ليلى`, 'الرئيسية + العامة، وتساوى ساعات هذا العمود فى الأجندة', [{ label: 'الموضوعات الرئيسية', value: b.main[col].night }, { label: 'الموضوعات العامة', value: b.general[col].night }])} />
   );
+  const mainPctSum = mainKeys.reduce((acc, k) => acc + pct(k), 0);
+  const genPctSum = genKeys.reduce((acc, k) => acc + pct(k), 0);
   return (
     <div className="sheet" dir="rtl">
       <Title>
@@ -293,12 +297,12 @@ export function LinkingSheet({ inst, agenda, dist, link, onInspect = noop }: { i
           <tr><th>الشهر</th>{wk.weekNumbers.map(w => <th key={w}>{ar(w)}</th>)}</tr>
         </thead>
         <tbody>
-          <tr className="band"><td colSpan={4 + names.length + wk.weekNumbers.length}>الموضوعات الرئيسية : {ar(inst.pcts.mainPct)} %</td></tr>
+          <tr className="band"><td colSpan={4 + names.length + wk.weekNumbers.length}>الموضوعات الرئيسية : {ar(mainPctSum || inst.pcts.mainPct)} %</td></tr>
           {mainKeys.map(body)}
-          {subtotal('إجمالى الموضوعات الرئيسية', 'main', inst.pcts.mainPct, dist.mainCell)}
-          <tr className="band"><td colSpan={4 + names.length + wk.weekNumbers.length}>الموضوعات العامة : {ar(100 - inst.pcts.mainPct)} %</td></tr>
+          {subtotal('إجمالى الموضوعات الرئيسية', 'main', mainPctSum || inst.pcts.mainPct, dist.mainCell)}
+          <tr className="band"><td colSpan={4 + names.length + wk.weekNumbers.length}>الموضوعات العامة : {ar(genPctSum || (100 - inst.pcts.mainPct))} %</td></tr>
           {genKeys.map(body)}
-          {subtotal('إجمالى الموضوعات العامة', 'general', 100 - inst.pcts.mainPct, dist.generalCell)}
+          {subtotal('إجمالى الموضوعات العامة', 'general', genPctSum || (100 - inst.pcts.mainPct), dist.generalCell)}
           <tr className="sub grand"><td colSpan={2}>الإجمالى</td><td>١٠٠%</td><td><Pair d={agenda.day} n={agenda.night}
             onD={lsum('الإجمالى العام — نهارى', 'مجموع الشهور', names.map((n, m) => ({ label: n, value: M.cols[m].day })))}
             onN={lsum('الإجمالى العام — ليلى', 'مجموع الشهور', names.map((n, m) => ({ label: n, value: M.cols[m].night })))} /></td>

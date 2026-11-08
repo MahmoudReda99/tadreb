@@ -25,19 +25,32 @@ const keepDate = (s: string) => s.replace(/[^0-9٠-٩۰-۹\s\-–—/.]/g, '');
 
 /** a whole number: shown in Arabic digits, accepts either kind, a leading zero never sticks, the whole value is selected on focus */
 function NumInput({ value, onCommit, min = 0, max = 999, label }: { value: number; onCommit: (n: number) => void; min?: number; max?: number; label?: string }) {
-  const shown = toArabic(String(value));
+  const safeVal = Number.isFinite(value) ? value : 0;
+  const shown = toArabic(String(safeVal));
   const [text, setText] = useState(shown);
   const [focus, setFocus] = useState(false);
   useEffect(() => { if (!focus) setText(shown); }, [shown, focus]);
   return (
     <input value={text} inputMode="numeric" dir="auto" aria-label={label}
       onFocus={e => { setFocus(true); e.target.select(); }}
-      onBlur={() => { setFocus(false); setText(shown); }}
+      onBlur={() => {
+        setFocus(false);
+        const n = parseNum(text);
+        if (n !== null) {
+          const clamped = Math.min(max, Math.max(min, n));
+          onCommit(clamped);
+          setText(toArabic(String(clamped)));
+        } else {
+          setText(shown);
+        }
+      }}
       onChange={e => {
-        const n = parseNum(e.target.value);
-        if (n === null) { setText(''); return; } // empty while typing is fine; the old value stays
-        setText(toArabic(String(n))); // 05 becomes 5 immediately
-        onCommit(Math.min(max, Math.max(min, n)));
+        const raw = e.target.value.replace(/[^0-9٠-٩۰-۹]/g, '');
+        setText(toArabic(raw));
+        const n = parseNum(raw);
+        if (n !== null) {
+          onCommit(Math.min(max, Math.max(min, n)));
+        }
       }} />
   );
 }
@@ -208,6 +221,13 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
     onChange({ ...inst, customSubjects: nextCustom, nightKeys: nextNight }, 'pcts');
   };
 
+  const mainSubjectsSum = inst.pcts.tactics + inst.pcts.tech + inst.pcts.shooting + inst.pcts.fitness
+    + (inst.customSubjects || []).filter(s => s.category === 'main').reduce((acc, s) => acc + (s.pct || 0), 0);
+  const genSubjectsSum = inst.pcts.education + inst.pcts.discipline + inst.pcts.security + inst.pcts.topography
+    + inst.pcts.morale + inst.pcts.recon + inst.pcts.engineering + inst.pcts.chemical
+    + inst.pcts.admin + inst.pcts.history + inst.pcts.intlLaw + inst.pcts.infoWar
+    + (inst.customSubjects || []).filter(s => s.category === 'general').reduce((acc, s) => acc + (s.pct || 0), 0);
+
   return (
     <FieldCtx.Provider value={{ conf, low, confirm: onConfirmField }}>
     <div className="panel">
@@ -292,7 +312,7 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
             <div className="subj-group-head">
               <div className="subj-group-title">
                 <span>الموضوعات الرئيسية</span>
-                <span className="badge">{toArabic(String(inst.pcts.mainPct))}%</span>
+                <span className="badge" title="مجموع نسب الموضوعات الرئيسية المكتوبة">{toArabic(String(mainSubjectsSum))}%</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <label style={{ fontSize: '.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -324,8 +344,11 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
                       </button>
                     </div>
                     <div className="subj-input-row">
-                      <NumInput value={inst.pcts[k]} min={0} max={100} label={l} onCommit={n => set('pcts', { ...inst.pcts, [k]: n }, 'pcts')} />
-                      <span className="pct-sign">%</span>
+                      <span className="subj-pct-label">النسبة:</span>
+                      <div className="pct-input-wrap">
+                        <NumInput value={inst.pcts[k]} min={0} max={100} label={l} onCommit={n => set('pcts', { ...inst.pcts, [k]: n }, 'pcts')} />
+                        <span className="pct-sign">%</span>
+                      </div>
                     </div>
                   </div>
                 );
@@ -343,14 +366,14 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
                     />
                     <button
                       type="button"
-                      className={`night-badge-btn ${s.hasNight ? 'is-night' : ''}`}
-                      onClick={() => updateCustomSubject(s.id, { hasNight: !s.hasNight })}
-                      title={s.hasNight ? 'موضوع له تدريب ليلى' : 'نهارى فقط'}
+                      className="mini danger delete-btn"
+                      onClick={() => removeCustomSubject(s.id)}
+                      title="حذف هذا الموضوع"
                     >
-                      {s.hasNight ? '🌙 دراسة ليلية' : '☀️ نهارى'}
+                      ✕
                     </button>
                   </div>
-                  <div className="subj-input-row">
+                  <div className="subj-options-row">
                     <select
                       className="cat-select"
                       value={s.category}
@@ -359,19 +382,21 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
                       <option value="main">رئيسية</option>
                       <option value="general">عامة</option>
                     </select>
-                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <button
+                      type="button"
+                      className={`night-badge-btn ${s.hasNight ? 'is-night' : ''}`}
+                      onClick={() => updateCustomSubject(s.id, { hasNight: !s.hasNight })}
+                      title={s.hasNight ? 'موضوع له تدريب ليلى' : 'نهارى فقط'}
+                    >
+                      {s.hasNight ? '🌙 دراسة ليلية' : '☀️ نهارى'}
+                    </button>
+                  </div>
+                  <div className="subj-input-row">
+                    <span className="subj-pct-label">النسبة:</span>
+                    <div className="pct-input-wrap">
                       <NumInput value={s.pct} min={0} max={100} label={s.name || 'النسبة'} onCommit={n => updateCustomSubject(s.id, { pct: n })} />
                       <span className="pct-sign">%</span>
                     </div>
-                    <button
-                      type="button"
-                      className="mini danger"
-                      style={{ padding: '2px 8px', minHeight: '30px' }}
-                      onClick={() => removeCustomSubject(s.id)}
-                      title="حذف هذا الموضوع"
-                    >
-                      حذف
-                    </button>
                   </div>
                 </div>
               ))}
@@ -383,7 +408,7 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
             <div className="subj-group-head">
               <div className="subj-group-title">
                 <span>الموضوعات العامة</span>
-                <span className="badge">{toArabic(String(100 - inst.pcts.mainPct))}%</span>
+                <span className="badge" title="مجموع نسب الموضوعات العامة المكتوبة">{toArabic(String(genSubjectsSum))}%</span>
               </div>
               <button type="button" className="mini" onClick={() => addCustomSubject('general')}>
                 + إضافة موضوع عام
@@ -406,8 +431,11 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
                       </button>
                     </div>
                     <div className="subj-input-row">
-                      <NumInput value={inst.pcts[k]} min={0} max={100} label={l} onCommit={n => set('pcts', { ...inst.pcts, [k]: n }, 'pcts')} />
-                      <span className="pct-sign">%</span>
+                      <span className="subj-pct-label">النسبة:</span>
+                      <div className="pct-input-wrap">
+                        <NumInput value={inst.pcts[k]} min={0} max={100} label={l} onCommit={n => set('pcts', { ...inst.pcts, [k]: n }, 'pcts')} />
+                        <span className="pct-sign">%</span>
+                      </div>
                     </div>
                   </div>
                 );
@@ -425,14 +453,14 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
                     />
                     <button
                       type="button"
-                      className={`night-badge-btn ${s.hasNight ? 'is-night' : ''}`}
-                      onClick={() => updateCustomSubject(s.id, { hasNight: !s.hasNight })}
-                      title={s.hasNight ? 'موضوع له تدريب ليلى' : 'نهارى فقط'}
+                      className="mini danger delete-btn"
+                      onClick={() => removeCustomSubject(s.id)}
+                      title="حذف هذا الموضوع"
                     >
-                      {s.hasNight ? '🌙 دراسة ليلية' : '☀️ نهارى'}
+                      ✕
                     </button>
                   </div>
-                  <div className="subj-input-row">
+                  <div className="subj-options-row">
                     <select
                       className="cat-select"
                       value={s.category}
@@ -441,19 +469,21 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
                       <option value="main">رئيسية</option>
                       <option value="general">عامة</option>
                     </select>
-                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <button
+                      type="button"
+                      className={`night-badge-btn ${s.hasNight ? 'is-night' : ''}`}
+                      onClick={() => updateCustomSubject(s.id, { hasNight: !s.hasNight })}
+                      title={s.hasNight ? 'موضوع له تدريب ليلى' : 'نهارى فقط'}
+                    >
+                      {s.hasNight ? '🌙 دراسة ليلية' : '☀️ نهارى'}
+                    </button>
+                  </div>
+                  <div className="subj-input-row">
+                    <span className="subj-pct-label">النسبة:</span>
+                    <div className="pct-input-wrap">
                       <NumInput value={s.pct} min={0} max={100} label={s.name || 'النسبة'} onCommit={n => updateCustomSubject(s.id, { pct: n })} />
                       <span className="pct-sign">%</span>
                     </div>
-                    <button
-                      type="button"
-                      className="mini danger"
-                      style={{ padding: '2px 8px', minHeight: '30px' }}
-                      onClick={() => removeCustomSubject(s.id)}
-                      title="حذف هذا الموضوع"
-                    >
-                      حذف
-                    </button>
                   </div>
                 </div>
               ))}
