@@ -85,6 +85,41 @@ h1, h2, h3 { margin: 0; }
 .tabs button { min-height: 48px; padding: 6px 18px; border-radius: 10px 10px 0 0; border: 1px solid var(--line); border-bottom: 0; background: var(--bg2); cursor: pointer; white-space: nowrap; }
 .tabs button.on { background: var(--gold); color: #1a1500; font-weight: 700; border-color: var(--gold); }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.export-dropdown { position: relative; display: inline-block; }
+.export-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  background: var(--bg2);
+  border: 1px solid var(--gold);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  min-width: 200px;
+  z-index: 50;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.export-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: right;
+  width: 100%;
+  transition: background 0.15s ease;
+}
+.export-item:last-child { border-bottom: none; }
+.export-item:hover { background: rgba(201, 162, 75, 0.2); color: var(--gold2); }
+.export-item .icon { font-size: 1.25rem; line-height: 1; }
 .sel { display: inline-flex; gap: 8px; align-items: center; } .sel select { min-height: 44px; border-radius: 8px; background: var(--bg2); border: 1px solid var(--line); padding: 0 8px; }
 .strip { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg2); }
 .strip b { color: var(--gold2); margin-inline-start: 4px; } .strip b.red { color: #ff6b66; } .good { color: var(--green); } .bad { color: #ff8a84; }

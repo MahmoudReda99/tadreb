@@ -11,6 +11,7 @@ import { parseInstructions } from './parser/parse';
 import { extractText } from './parser/extract';
 import { importJson, listProjects, removeProject, saveProject, type Project } from './db/database';
 import { exportPdf } from './export/pdf';
+import { exportWord } from './export/word';
 import { Review } from './ui/Review';
 import { Inspector } from './ui/Inspector';
 import { AgendaSheet, DistributionSheet, LinkingSheet, WeeklySheet } from './ui/Sheets';
@@ -54,7 +55,20 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [pid, setPid] = useState<string>(() => uid());
   const [exporting, setExporting] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
   const online = useOnline();
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setExportMenuOpen(false);
+      }
+    };
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, [exportMenuOpen]);
 
   const refresh = useCallback(() => { listProjects().then(setProjects).catch(() => setProjects([])); }, []);
   useEffect(refresh, [refresh]);
@@ -104,10 +118,17 @@ export default function App() {
     await saveProject({ id: pid, name: inst.courseName || 'مشروع بدون اسم', instructions: inst, updatedAt: Date.now() }).catch(() => {});
     refresh(); setView('results'); setTab('agenda');
   }
-  async function doExport() {
+  async function doExportPdf() {
     if (!model) return;
+    setExportMenuOpen(false);
     setExporting(true);
     try { await exportPdf(model); } catch (e) { setError(String(e)); } finally { setExporting(false); }
+  }
+  async function doExportWord() {
+    if (!model) return;
+    setExportMenuOpen(false);
+    setExporting(true);
+    try { await exportWord(model); } catch (e) { setError(String(e)); } finally { setExporting(false); }
   }
   async function importFile(f: File) {
     try { open(importJson(await f.text())); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -188,7 +209,34 @@ export default function App() {
             {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
           </nav>
           <div className="actions">
-            <button className="btn primary" onClick={doExport} disabled={exporting || !model}>{exporting ? 'جارى التصدير…' : 'تصدير PDF'}</button>
+            <div className="export-dropdown" ref={exportRef}>
+              <button
+                className="btn primary"
+                onClick={() => setExportMenuOpen(o => !o)}
+                disabled={exporting || !model}
+                aria-expanded={exportMenuOpen}
+              >
+                {exporting ? 'جارى التصدير…' : 'تصدير ▾'}
+              </button>
+              {exportMenuOpen && (
+                <div className="export-menu">
+                  <button type="button" className="export-item" onClick={doExportPdf}>
+                    <span className="icon">📄</span>
+                    <div>
+                      <b>تصدير PDF</b>
+                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>مستند PDF للعرض والطباعة</small>
+                    </div>
+                  </button>
+                  <button type="button" className="export-item" onClick={doExportWord}>
+                    <span className="icon">📝</span>
+                    <div>
+                      <b>تصدير Word</b>
+                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>مستند وورد قابل للتعديل (.doc)</small>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
             <button className="btn" onClick={() => window.print()}>طباعة</button>
             <button className="btn ghost" onClick={() => setView('review')}>تعديل التعليمات</button>
             {tab === 'link' && (
