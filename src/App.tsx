@@ -129,7 +129,18 @@ export default function App() {
     if (!model) return;
     setExportMenuOpen(false);
     setExporting(true);
-    try { await exportPdf(model); } catch (e) { setError(String(e)); } finally { setExporting(false); }
+    try {
+      await exportPdf(model);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes('dynamically imported') || msg.includes('Failed to fetch')) {
+        window.location.reload();
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setExporting(false);
+    }
   }
   async function doExportWord() {
     if (!model) return;

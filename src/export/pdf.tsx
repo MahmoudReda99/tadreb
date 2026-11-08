@@ -1,5 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import type { Model } from '../ui/ExportPages';
 import { ExportAllPages } from '../ui/ExportPages';
 
@@ -10,7 +12,6 @@ import { ExportAllPages } from '../ui/ExportPages';
  * 100% offline, zero external dependencies.
  */
 export async function exportPdf(m: Model, filename = 'اجندة-التدريب-القتالى-كاملة.pdf'): Promise<void> {
-  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas'), import('jspdf')]);
   const host = document.createElement('div');
   host.className = 'export-host';
   document.body.appendChild(host);
