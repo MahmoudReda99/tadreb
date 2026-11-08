@@ -11,24 +11,16 @@ import { parseInstructions } from './parser/parse';
 import { extractText } from './parser/extract';
 import { importJson, listProjects, removeProject, saveProject, type Project } from './db/database';
 import { exportPdf } from './export/pdf';
-import { exportWord } from './export/word';
 import { Review } from './ui/Review';
 import { Inspector } from './ui/Inspector';
 import { AgendaSheet, DistributionSheet, LinkingSheet, WeeklySheet } from './ui/Sheets';
-import { InstructionsSheet } from './ui/InstructionsSheet';
-import { ExportAllPages, type Model } from './ui/ExportPages';
+import { ExportPages, type Model } from './ui/ExportPages';
 import type { Audit } from './engine/audit';
 import { ar } from './ui/format';
 
 type View = 'upload' | 'review' | 'results';
-type Tab = 'inst' | 'agenda' | 'dist' | 'link' | 'week';
-const TABS: [Tab, string][] = [
-  ['inst', 'ورقة التعليمات والأسئلة'],
-  ['agenda', 'الأجندة'],
-  ['dist', 'التوزيع'],
-  ['link', 'جدول الربط'],
-  ['week', 'المستخرج الأسبوعى'],
-];
+type Tab = 'agenda' | 'dist' | 'link' | 'week';
+const TABS: [Tab, string][] = [['agenda', 'الأجندة'], ['dist', 'التوزيع'], ['link', 'جدول الربط'], ['week', 'المستخرج الأسبوعى']];
 
 /** scales the 1123px paper to the screen width (never below 0.6, then it scrolls) */
 function Paper({ children }: { children: React.ReactNode }) {
@@ -62,20 +54,7 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [pid, setPid] = useState<string>(() => uid());
   const [exporting, setExporting] = useState(false);
-  const [exportMenuOpen, setExportMenuOpen] = useState(false);
-  const exportRef = useRef<HTMLDivElement>(null);
   const online = useOnline();
-
-  useEffect(() => {
-    if (!exportMenuOpen) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
-        setExportMenuOpen(false);
-      }
-    };
-    document.addEventListener('click', onDocClick);
-    return () => document.removeEventListener('click', onDocClick);
-  }, [exportMenuOpen]);
 
   const refresh = useCallback(() => { listProjects().then(setProjects).catch(() => setProjects([])); }, []);
   useEffect(refresh, [refresh]);
@@ -125,28 +104,10 @@ export default function App() {
     await saveProject({ id: pid, name: inst.courseName || 'مشروع بدون اسم', instructions: inst, updatedAt: Date.now() }).catch(() => {});
     refresh(); setView('results'); setTab('agenda');
   }
-  async function doExportPdf() {
+  async function doExport() {
     if (!model) return;
-    setExportMenuOpen(false);
     setExporting(true);
-    try {
-      await exportPdf(model);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes('dynamically imported') || msg.includes('Failed to fetch')) {
-        window.location.reload();
-      } else {
-        setError(msg);
-      }
-    } finally {
-      setExporting(false);
-    }
-  }
-  async function doExportWord() {
-    if (!model) return;
-    setExportMenuOpen(false);
-    setExporting(true);
-    try { await exportWord(model); } catch (e) { setError(String(e)); } finally { setExporting(false); }
+    try { await exportPdf(model); } catch (e) { setError(String(e)); } finally { setExporting(false); }
   }
   async function importFile(f: File) {
     try { open(importJson(await f.text())); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -227,34 +188,7 @@ export default function App() {
             {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
           </nav>
           <div className="actions">
-            <div className="export-dropdown" ref={exportRef}>
-              <button
-                className="btn primary"
-                onClick={() => setExportMenuOpen(o => !o)}
-                disabled={exporting || !model}
-                aria-expanded={exportMenuOpen}
-              >
-                {exporting ? 'جارى التصدير…' : 'تصدير ▾'}
-              </button>
-              {exportMenuOpen && (
-                <div className="export-menu">
-                  <button type="button" className="export-item" onClick={doExportPdf}>
-                    <span className="icon">📄</span>
-                    <div>
-                      <b>تصدير PDF</b>
-                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>وثيقة التعليمات + الأجندة والشيتات محلولة (.pdf)</small>
-                    </div>
-                  </button>
-                  <button type="button" className="export-item" onClick={doExportWord}>
-                    <span className="icon">📝</span>
-                    <div>
-                      <b>تصدير Word</b>
-                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '.75rem' }}>وثيقة التعليمات + الأجندة والشيتات محلولة (.doc)</small>
-                    </div>
-                  </button>
-                </div>
-              )}
-            </div>
+            <button className="btn primary" onClick={doExport} disabled={exporting || !model}>{exporting ? 'جارى التصدير…' : 'تصدير PDF'}</button>
             <button className="btn" onClick={() => window.print()}>طباعة</button>
             <button className="btn ghost" onClick={() => setView('review')}>تعديل التعليمات</button>
             {tab === 'link' && (
@@ -277,12 +211,11 @@ export default function App() {
                 {tab === 'link' && <span>التفصيل: {monthLabel}</span>}
               </div>
               <p className="hint">اضغط أى رقم لعرض خطوات حسابه.</p>
-              {tab === 'inst' && <Paper><InstructionsSheet inst={inst} /></Paper>}
               {tab === 'agenda' && <Paper><AgendaSheet inst={inst} agenda={model.agenda} onInspect={setAudit} /></Paper>}
               {tab === 'dist' && <Paper><DistributionSheet inst={inst} agenda={model.agenda} dist={model.dist} onInspect={setAudit} /></Paper>}
               {tab === 'link' && <Paper><LinkingSheet inst={inst} agenda={model.agenda} dist={model.dist} link={model.link} onInspect={setAudit} /></Paper>}
               {tab === 'week' && <Paper><WeeklySheet inst={inst} ex={model.ex} onInspect={setAudit} /></Paper>}
-              <div className="print-root"><ExportAllPages m={model} /></div>
+              <div className="print-root"><ExportPages m={model} /></div>
             </>
           )}
         </main>
