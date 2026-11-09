@@ -228,4 +228,29 @@ describe('custom subjects & night study flag', () => {
     const cLink = calculateLinking(customInst, cAgenda, cDist);
     expect(cLink.checks.ok).toBe(true);
   });
+
+  it('verifies that in every week and every day, lectures are sorted strictly ascending top-to-bottom', () => {
+    for (let w = 1; w <= 26; w++) {
+      const ex = calculateWeekly(agenda, link, w, F);
+      if (!ex) continue;
+      expect(ex.checks.ok).toBe(true);
+
+      for (let di = 0; di < 6; di++) {
+        let lastDayEnd = 0;
+        let lastNightEnd = 7;
+        for (const r of ex.rows) {
+          for (const slot of r.slots[di]) {
+            const [start, end] = slot.lectures.split('-').map(Number);
+            if (start < 8) {
+              expect(start).toBeGreaterThanOrEqual(lastDayEnd);
+              lastDayEnd = end;
+            } else {
+              expect(start).toBeGreaterThanOrEqual(lastNightEnd);
+              lastNightEnd = end;
+            }
+          }
+        }
+      }
+    }
+  });
 });

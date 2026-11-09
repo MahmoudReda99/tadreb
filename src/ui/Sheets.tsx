@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import type { AgendaResult, DistributionResult, Instructions, LinkingResult, SubjectKey, WeeklyExtract } from '../engine/types';
 import { getAllKeys, getMainKeys, getGeneralKeys, getSubjectName, getSubjectShortName } from '../engine/types';
 import { DAYS_AR, addDays, dm, monthNames, parseDate } from '../engine/dates';
@@ -324,10 +325,13 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
   if (!ex) return <div className="sheet" dir="rtl"><p>لا توجد بيانات لهذا الأسبوع</p></div>;
   const dn = ['السبت', 'الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
   const rows = ex.rows.filter(r => r.day + r.night > 0);
-  const cellHrs = (r: typeof rows[number], i: number) => r.slots[i];
+  const cellHrs = (r: typeof rows[number], i: number) =>
+    [...r.slots[i]].sort((a, b) => parseInt(a.lectures, 10) - parseInt(b.lectures, 10));
   const isNight = (lectures: string) => parseInt(lectures, 10) >= 8;
   const hrs = (r: typeof rows[number], i: number, night: boolean) => sum(r.slots[i].filter(x => isNight(x.lectures) === night).map(x => x.hours));
   const wsum = (title: string, rule: string, parts: { label: string; value: number }[]) => () => onInspect(auditSum(title, rule, parts));
+  const hasNightDays = ex.days.some(d => d.night > 0);
+
   return (
     <div className="sheet framed" dir="rtl">
       <div className="mod">
@@ -340,7 +344,29 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
         <div className="u">خلال المدة من {ar(ex.from.split('-').reverse().join('/'))} إلى {ar(ex.to.split('-').reverse().join('/'))}</div>
       </div>
       <table className="grid weekly">
-        <thead><tr><th>م</th><th>الموضوعات</th><th>ساعات الأسبوع</th>{dn.map(d => <th key={d}>{d}</th>)}<th>ملاحظات</th></tr></thead>
+        <thead>
+          <tr>
+            <th rowSpan={hasNightDays ? 2 : 1}>م</th>
+            <th rowSpan={hasNightDays ? 2 : 1}>الموضوعات</th>
+            <th rowSpan={hasNightDays ? 2 : 1}>ساعات الأسبوع</th>
+            {dn.map((d, di) => ex.days[di]?.night > 0 ? (
+              <th key={d} colSpan={2}>{d}</th>
+            ) : (
+              <th key={d} rowSpan={hasNightDays ? 2 : 1}>{d}</th>
+            ))}
+            <th rowSpan={hasNightDays ? 2 : 1}>ملاحظات</th>
+          </tr>
+          {hasNightDays ? (
+            <tr>
+              {ex.days.map((d, di) => d.night > 0 ? (
+                <Fragment key={di}>
+                  <th>نهارى</th>
+                  <th className="r">ليلى</th>
+                </Fragment>
+              ) : null)}
+            </tr>
+          ) : null}
+        </thead>
         <tbody>
           {rows.map((r, i) => (
             <tr key={r.key}>
@@ -348,17 +374,47 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
               <td className="pair"><Pair d={r.day} n={r.night}
                 onD={wsum(`${getSubjectName(r.key, inst)} — ساعات الأسبوع النهارية`, 'مجموع محاضرات هذا الموضوع النهارية فى أيام الأسبوع', dn.map((d, di) => ({ label: d, value: hrs(r, di, false) })))}
                 onN={wsum(`${getSubjectName(r.key, inst)} — ساعات الأسبوع الليلية`, 'مجموع محاضرات هذا الموضوع الليلية فى أيام الأسبوع', dn.map((d, di) => ({ label: d, value: hrs(r, di, true) })))} /></td>
-              {ex.days.map((_, di) => (
-                <td key={di} className={cellHrs(r, di).length ? 'slot' : ''}>
-                  {cellHrs(r, di).length ? cellHrs(r, di).map((s, j) => (
-                    <div key={j} className={'tap' + (parseInt(s.lectures, 10) >= 8 ? ' r' : '')} onClick={() => onInspect({
-                      title: `${getSubjectName(r.key, inst)} — ${dn[di]}`, rule: 'ترتيب محاضرات اليوم: المحاضرة 1 للياقة (والتعليم المنضم يوم الخميس)، وباقى النهار أزواج (2-3 ثم 4-5 ثم 6-7)، والليل (8-9 ثم 10-11).',
-                      steps: [{ label: 'الساعات', value: String(s.hours) }, { label: 'المحاضرات', value: s.lectures }, { label: 'ساعات الموضوع بالأسبوع', value: `${r.day} نهارى + ${r.night} ليلى` }],
-                      equation: `${s.hours} / ${s.lectures}`, result: String(s.hours), ok: ex.checks.ok,
-                    })}>{ar(s.text)}</div>
-                  )) : <span>- / -</span>}
-                </td>
-              ))}
+              {ex.days.map((d, di) => {
+                if (d.night > 0) {
+                  const daySlots = cellHrs(r, di).filter(s => !isNight(s.lectures));
+                  const nightSlots = cellHrs(r, di).filter(s => isNight(s.lectures));
+                  return (
+                    <Fragment key={di}>
+                      <td className={daySlots.length ? 'slot' : ''}>
+                        {daySlots.length ? daySlots.map((s, j) => (
+                          <div key={j} className="tap" onClick={() => onInspect({
+                            title: `${getSubjectName(r.key, inst)} — ${dn[di]} (نهارى)`,
+                            rule: 'ترتيب محاضرات اليوم النهارية.',
+                            steps: [{ label: 'الساعات', value: String(s.hours) }, { label: 'المحاضرات', value: s.lectures }, { label: 'ساعات الموضوع بالأسبوع', value: `${r.day} نهارى + ${r.night} ليلى` }],
+                            equation: `${s.hours} / ${s.lectures}`, result: String(s.hours), ok: ex.checks.ok,
+                          })}>{ar(s.text)}</div>
+                        )) : <span>- / -</span>}
+                      </td>
+                      <td className={nightSlots.length ? 'slot' : ''}>
+                        {nightSlots.length ? nightSlots.map((s, j) => (
+                          <div key={j} className="tap r" onClick={() => onInspect({
+                            title: `${getSubjectName(r.key, inst)} — ${dn[di]} (ليلى)`,
+                            rule: 'ترتيب محاضرات اليوم الليلية.',
+                            steps: [{ label: 'الساعات', value: String(s.hours) }, { label: 'المحاضرات', value: s.lectures }, { label: 'ساعات الموضوع بالأسبوع', value: `${r.day} نهارى + ${r.night} ليلى` }],
+                            equation: `${s.hours} / ${s.lectures}`, result: String(s.hours), ok: ex.checks.ok,
+                          })}>{ar(s.text)}</div>
+                        )) : <span>- / -</span>}
+                      </td>
+                    </Fragment>
+                  );
+                }
+                return (
+                  <td key={di} className={cellHrs(r, di).length ? 'slot' : ''}>
+                    {cellHrs(r, di).length ? cellHrs(r, di).map((s, j) => (
+                      <div key={j} className={'tap' + (isNight(s.lectures) ? ' r' : '')} onClick={() => onInspect({
+                        title: `${getSubjectName(r.key, inst)} — ${dn[di]}`, rule: 'ترتيب محاضرات اليوم: المحاضرة 1 للياقة (والتعليم المنضم يوم الخميس)، وباقى النهار أزواج (2-3 ثم 4-5 ثم 6-7)، والليل (8-9 ثم 10-11).',
+                        steps: [{ label: 'الساعات', value: String(s.hours) }, { label: 'المحاضرات', value: s.lectures }, { label: 'ساعات الموضوع بالأسبوع', value: `${r.day} نهارى + ${r.night} ليلى` }],
+                        equation: `${s.hours} / ${s.lectures}`, result: String(s.hours), ok: ex.checks.ok,
+                      })}>{ar(s.text)}</div>
+                    )) : <span>- / -</span>}
+                  </td>
+                );
+              })}
               <td />
             </tr>
           ))}
@@ -367,7 +423,12 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
             <td className="pair"><Pair d={ex.totals.day} n={ex.totals.night}
               onD={wsum('إجمالى الأسبوع — نهارى', 'مجموع ساعات كل أيام الأسبوع النهارية', ex.days.map((d, i) => ({ label: dn[i], value: d.day })))}
               onN={wsum('إجمالى الأسبوع — ليلى', 'مجموع ساعات كل أيام الأسبوع الليلية', ex.days.map((d, i) => ({ label: dn[i], value: d.night })))} /></td>
-            {ex.days.map((d, i) => (
+            {ex.days.map((d, i) => d.night > 0 ? (
+              <Fragment key={i}>
+                <td><Num v={d.day} on={wsum(`${dn[i]} — ساعات اليوم النهارية`, 'مجموع ساعات مواضيع هذا اليوم', rows.map(r => ({ label: getSubjectShortName(r.key, inst), value: hrs(r, i, false) })))} /></td>
+                <td className="r"><Num v={d.night} on={wsum(`${dn[i]} — ساعات اليوم الليلية`, 'مجموع ساعات مواضيع هذا اليوم', rows.map(r => ({ label: getSubjectShortName(r.key, inst), value: hrs(r, i, true) })))} /></td>
+              </Fragment>
+            ) : (
               <td key={i} className="pair"><Pair d={d.day} n={d.night}
                 onD={wsum(`${dn[i]} — ساعات اليوم النهارية`, 'مجموع ساعات مواضيع هذا اليوم', rows.map(r => ({ label: getSubjectShortName(r.key, inst), value: hrs(r, i, false) })))}
                 onN={wsum(`${dn[i]} — ساعات اليوم الليلية`, 'مجموع ساعات مواضيع هذا اليوم', rows.map(r => ({ label: getSubjectShortName(r.key, inst), value: hrs(r, i, true) })))} /></td>
