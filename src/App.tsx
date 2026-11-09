@@ -13,14 +13,20 @@ import { importJson, listProjects, removeProject, saveProject, type Project } fr
 import { exportPdf } from './export/pdf';
 import { Review } from './ui/Review';
 import { Inspector } from './ui/Inspector';
-import { AgendaSheet, DistributionSheet, LinkingSheet, WeeklySheet } from './ui/Sheets';
+import { AgendaSheet, DistributionSheet, LinkingSheet, MonthDetailSheet, WeeklySheet } from './ui/Sheets';
 import { ExportPages, type Model } from './ui/ExportPages';
 import type { Audit } from './engine/audit';
 import { ar } from './ui/format';
 
 type View = 'upload' | 'review' | 'results';
-type Tab = 'agenda' | 'dist' | 'link' | 'week';
-const TABS: [Tab, string][] = [['agenda', 'الأجندة'], ['dist', 'التوزيع'], ['link', 'جدول الربط'], ['week', 'المستخرج الأسبوعى']];
+type Tab = 'agenda' | 'dist' | 'link' | 'month' | 'week';
+const TABS: [Tab, string][] = [
+  ['agenda', 'الأجندة'],
+  ['dist', 'التوزيع'],
+  ['link', 'جدول الربط'],
+  ['month', 'تفصيل الشهر'],
+  ['week', 'المستخرج الأسبوعى'],
+];
 
 /** scales the 1123px paper to the screen width (never below 0.6, then it scrolls) */
 function Paper({ children }: { children: React.ReactNode }) {
@@ -191,7 +197,7 @@ export default function App() {
             <button className="btn primary" onClick={doExport} disabled={exporting || !model}>{exporting ? 'جارى التصدير…' : 'تصدير PDF'}</button>
             <button className="btn" onClick={() => window.print()}>طباعة</button>
             <button className="btn ghost" onClick={() => setView('review')}>تعديل التعليمات</button>
-            {tab === 'link' && (
+            {(tab === 'link' || tab === 'month') && (
               <label className="sel">شهر التفصيل <select value={inst.selectedMonth} onChange={e => setInst({ ...inst, selectedMonth: +e.target.value })}>
                 {monthNames(inst.startSaturday, inst.weeksPerMonth.length).map((n, i) => <option key={i} value={i}>{n}</option>)}</select></label>
             )}
@@ -208,12 +214,13 @@ export default function App() {
                 <span>لياقة <b>{ar(model.agenda.fitness)}</b></span><span>تعليم منضم <b>{ar(model.agenda.education)}</b></span><span>أمن حربى <b>{ar(model.agenda.security)}</b></span>
                 <span className={model.agenda.checks.ok && model.dist.checks.ok && model.link.checks.ok ? 'good' : 'bad'}>
                   {model.agenda.checks.ok && model.dist.checks.ok && model.link.checks.ok ? '✔ كل الفحوص سليمة' : '✘ توجد فحوص غير مطابقة'}</span>
-                {tab === 'link' && <span>التفصيل: {monthLabel}</span>}
+                {(tab === 'link' || tab === 'month') && <span>التفصيل: {monthLabel}</span>}
               </div>
               <p className="hint">اضغط أى رقم لعرض خطوات حسابه.</p>
               {tab === 'agenda' && <Paper><AgendaSheet inst={inst} agenda={model.agenda} onInspect={setAudit} /></Paper>}
               {tab === 'dist' && <Paper><DistributionSheet inst={inst} agenda={model.agenda} dist={model.dist} onInspect={setAudit} /></Paper>}
               {tab === 'link' && <Paper><LinkingSheet inst={inst} agenda={model.agenda} dist={model.dist} link={model.link} onInspect={setAudit} /></Paper>}
+              {tab === 'month' && <Paper><MonthDetailSheet inst={inst} agenda={model.agenda} dist={model.dist} link={model.link} onInspect={setAudit} /></Paper>}
               {tab === 'week' && <Paper><WeeklySheet inst={inst} ex={model.ex} onInspect={setAudit} /></Paper>}
               <div className="print-root"><ExportPages m={model} /></div>
             </>

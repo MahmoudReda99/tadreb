@@ -320,7 +320,147 @@ export function LinkingSheet({ inst, agenda, dist, link, onInspect = noop }: { i
   );
 }
 
-/* ───────────────────────────── page 4 ───────────────────────────── */
+/* ───────────────────────────── page 4: detailed month ───────────────────────────── */
+export function MonthDetailSheet({ inst, dist, link, onInspect = noop }: { inst: Instructions; agenda?: AgendaResult; dist: DistributionResult; link: LinkingResult; onInspect?: Inspect }) {
+  const names = monthNames(inst.startSaturday, inst.weeksPerMonth.length);
+  const sm = Math.min(inst.selectedMonth, names.length - 1);
+  const monthName = names[sm] || '';
+  const wk = link.weeks[sm];
+  const M = link.months;
+  const mainKeys = getMainKeys(inst);
+  const genKeys = getGeneralKeys(inst);
+  const allKeys = getAllKeys(inst);
+  const pct = (k: SubjectKey) => {
+    const custom = inst.customSubjects?.find(s => s.id === k);
+    if (custom) return custom.pct;
+    return k === 'fitness' ? inst.pcts.fitness : ((inst.pcts as unknown as Record<string, number>)[k] ?? 0);
+  };
+  const lsum = (title: string, rule: string, parts: { label: string; value: number }[]) => () => onInspect(auditSum(title, rule, parts));
+
+  const body = (k: SubjectKey, i: number) => (
+    <tr key={k}>
+      <td>{ar(i + 1)}</td>
+      <td className="subj">{getSubjectShortName(k, inst)}</td>
+      <td>{ar(pct(k))}%</td>
+      <td className="pair">
+        <Pair
+          d={M.cells[sm]?.[k]?.day || 0}
+          n={M.cells[sm]?.[k]?.night || 0}
+          onD={lsum(`${getSubjectName(k, inst)} — شهر ${monthName} — نهارى`, 'مجموع أسابيع هذا الشهر', wk.weekNumbers.map((w, c) => ({ label: `أسبوع ${w}`, value: wk.b.cells[c]?.[k]?.day || 0 })))}
+          onN={lsum(`${getSubjectName(k, inst)} — شهر ${monthName} — ليلى`, 'مجموع أسابيع هذا الشهر', wk.weekNumbers.map((w, c) => ({ label: `أسبوع ${w}`, value: wk.b.cells[c]?.[k]?.night || 0 })))}
+        />
+      </td>
+      {wk.weekNumbers.map((w, c) => (
+        <td key={w} className="pair">
+          <Pair
+            d={wk.b.cells[c]?.[k]?.day || 0}
+            n={wk.b.cells[c]?.[k]?.night || 0}
+            onD={() => onInspect(auditLink(wk.b, { day: M.cols[sm].day, night: M.cols[sm].night }, Object.fromEntries(allKeys.map(key => [key, M.cells[sm][key]])) as typeof dist.cells, c, k, 'day'))}
+            onN={() => onInspect(auditLink(wk.b, { day: M.cols[sm].day, night: M.cols[sm].night }, Object.fromEntries(allKeys.map(key => [key, M.cells[sm][key]])) as typeof dist.cells, c, k, 'night'))}
+          />
+        </td>
+      ))}
+    </tr>
+  );
+
+  const subtotal = (label: string, side: 'main' | 'general', pc: number) => {
+    const keys = side === 'main' ? mainKeys : genKeys;
+    const monthCell = M[side][sm];
+    return (
+      <tr className="sub">
+        <td colSpan={2}>{label}</td>
+        <td>{ar(pc)}%</td>
+        <td className="pair">
+          <Pair
+            d={monthCell.day}
+            n={monthCell.night}
+            onD={lsum(`${label} — شهر ${monthName} — نهارى`, 'مجموع الساعات النهارية لموضوعات المجموعة فى هذا الشهر', keys.map(k => ({ label: getSubjectName(k, inst), value: M.cells[sm]?.[k]?.day || 0 })))}
+            onN={lsum(`${label} — شهر ${monthName} — ليلى`, 'مجموع الساعات الليلية لموضوعات المجموعة فى هذا الشهر', keys.map(k => ({ label: getSubjectName(k, inst), value: M.cells[sm]?.[k]?.night || 0 })))}
+          />
+        </td>
+        {wk.weekNumbers.map((w, c) => {
+          const x = wk.b[side][c];
+          return (
+            <td key={w} className="pair">
+              <Pair
+                d={x.day}
+                n={x.night}
+                onD={lsum(`${label} — أسبوع ${w} — نهارى`, 'مجموع الساعات النهارية لموضوعات المجموعة فى هذا الأسبوع', keys.map(k => ({ label: getSubjectName(k, inst), value: wk.b.cells[c]?.[k]?.day || 0 })))}
+                onN={lsum(`${label} — أسبوع ${w} — ليلى`, 'مجموع الساعات الليلية لموضوعات المجموعة فى هذا الأسبوع', keys.map(k => ({ label: getSubjectName(k, inst), value: wk.b.cells[c]?.[k]?.night || 0 })))}
+              />
+            </td>
+          );
+        })}
+      </tr>
+    );
+  };
+
+  const mainPctSum = mainKeys.reduce((acc, k) => acc + pct(k), 0);
+  const genPctSum = genKeys.reduce((acc, k) => acc + pct(k), 0);
+
+  return (
+    <div className="sheet" dir="rtl">
+      <Title>
+        <div className="u">جدول تفصيل الساعات والموضوعات على أسابيع شهر ( {monthName} )</div>
+        <div className="u">عن الفترة التدريبية الأولى من العام التدريبى {YEARS(inst)} م</div>
+      </Title>
+      <table className="grid link">
+        <thead>
+          <tr>
+            <th rowSpan={2}>م</th>
+            <th rowSpan={2}>الموضوع</th>
+            <th rowSpan={2}>النسبة المئوية</th>
+            <th rowSpan={2}>شهر {monthName}</th>
+            <th colSpan={wk.weekNumbers.length}>أسابيع الشهر</th>
+          </tr>
+          <tr>
+            {wk.weekNumbers.map(w => <th key={w}>{ar(w)}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="band"><td colSpan={4 + wk.weekNumbers.length}>الموضوعات الرئيسية : {ar(mainPctSum || inst.pcts.mainPct)} %</td></tr>
+          {mainKeys.map(body)}
+          {subtotal('إجمالى الموضوعات الرئيسية', 'main', mainPctSum || inst.pcts.mainPct)}
+          <tr className="band"><td colSpan={4 + wk.weekNumbers.length}>الموضوعات العامة : {ar(genPctSum || (100 - inst.pcts.mainPct))} %</td></tr>
+          {genKeys.map(body)}
+          {subtotal('إجمالى الموضوعات العامة', 'general', genPctSum || (100 - inst.pcts.mainPct))}
+          <tr className="sub grand">
+            <td colSpan={2}>الإجمالى</td>
+            <td>١٠٠%</td>
+            <td className="pair">
+              <Pair
+                d={M.cols[sm].day}
+                n={M.cols[sm].night}
+                onD={lsum(`الإجمالى — شهر ${monthName} — نهارى`, 'الرئيسية + العامة لهذا الشهر', [{ label: 'الموضوعات الرئيسية', value: M.main[sm].day }, { label: 'الموضوعات العامة', value: M.general[sm].day }])}
+                onN={lsum(`الإجمالى — شهر ${monthName} — ليلى`, 'الرئيسية + العامة لهذا الشهر', [{ label: 'الموضوعات الرئيسية', value: M.main[sm].night }, { label: 'الموضوعات العامة', value: M.general[sm].night }])}
+              />
+            </td>
+            {wk.weekNumbers.map((w, c) => (
+              <td key={w} className="pair">
+                <Pair
+                  d={wk.b.cols[c].day}
+                  n={wk.b.cols[c].night}
+                  onD={lsum(`الإجمالى — أسبوع ${w} — نهارى`, 'الرئيسية + العامة لهذا الأسبوع', [{ label: 'الموضوعات الرئيسية', value: wk.b.main[c].day }, { label: 'الموضوعات العامة', value: wk.b.general[c].day }])}
+                  onN={lsum(`الإجمالى — أسبوع ${w} — ليلى`, 'الرئيسية + العامة لهذا الأسبوع', [{ label: 'الموضوعات الرئيسية', value: wk.b.main[c].night }, { label: 'الموضوعات العامة', value: wk.b.general[c].night }])}
+                />
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+      <div className="checks">
+        <span className={'chk ' + (wk.b.rowsOk ? 'ok' : 'bad')}>
+          {wk.b.rowsOk ? '✔ الفحص الأفقى: مجموع أسابيع كل موضوع = ساعات الشهر' : '✘ الفحص الأفقى'}
+        </span>
+        <span className={'chk ' + (wk.b.colsOk ? 'ok' : 'bad')}>
+          {wk.b.colsOk ? '✔ الفحص الرأسى: مجموع كل أسبوع = ساعات الأسبوع فى الأجندة' : '✘ الفحص الرأسى'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ───────────────────────────── page 5 ───────────────────────────── */
 export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions; ex: WeeklyExtract | null; onInspect?: Inspect }) {
   if (!ex) return <div className="sheet" dir="rtl"><p>لا توجد بيانات لهذا الأسبوع</p></div>;
   const dn = ['السبت', 'الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
