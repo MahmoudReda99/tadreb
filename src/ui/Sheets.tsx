@@ -563,15 +563,12 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
             <td className="pair"><Pair d={ex.totals.day} n={ex.totals.night}
               onD={wsum('إجمالى الأسبوع — نهارى', 'مجموع ساعات كل أيام الأسبوع النهارية', ex.days.map((d, i) => ({ label: dn[i], value: d.day })))}
               onN={wsum('إجمالى الأسبوع — ليلى', 'مجموع ساعات كل أيام الأسبوع الليلية', ex.days.map((d, i) => ({ label: dn[i], value: d.night })))} /></td>
-            {ex.days.map((d, i) => d.night > 0 ? (
-              <Fragment key={i}>
-                <td><Num v={d.day} on={wsum(`${dn[i]} — ساعات اليوم النهارية`, 'مجموع ساعات مواضيع هذا اليوم', rows.map(r => ({ label: getSubjectShortName(r.key, inst), value: hrs(r, i, false) })))} /></td>
-                <td className="r"><Num v={d.night} on={wsum(`${dn[i]} — ساعات اليوم الليلية`, 'مجموع ساعات مواضيع هذا اليوم', rows.map(r => ({ label: getSubjectShortName(r.key, inst), value: hrs(r, i, true) })))} /></td>
-              </Fragment>
-            ) : (
-              <td key={i} className="pair"><Pair d={d.day} n={d.night}
-                onD={wsum(`${dn[i]} — ساعات اليوم النهارية`, 'مجموع ساعات مواضيع هذا اليوم', rows.map(r => ({ label: getSubjectShortName(r.key, inst), value: hrs(r, i, false) })))}
-                onN={wsum(`${dn[i]} — ساعات اليوم الليلية`, 'مجموع ساعات مواضيع هذا اليوم', rows.map(r => ({ label: getSubjectShortName(r.key, inst), value: hrs(r, i, true) })))} /></td>
+            {ex.days.map((d, i) => (
+              <td key={i} colSpan={d.night > 0 ? 2 : undefined} className="pair">
+                <Pair d={d.day} n={d.night}
+                  onD={wsum(`${dn[i]} — ساعات اليوم النهارية`, 'مجموع ساعات مواضيع هذا اليوم', rows.map(r => ({ label: getSubjectShortName(r.key, inst), value: hrs(r, i, false) })))}
+                  onN={wsum(`${dn[i]} — ساعات اليوم الليلية`, 'مجموع ساعات مواضيع هذا اليوم', rows.map(r => ({ label: getSubjectShortName(r.key, inst), value: hrs(r, i, true) })))} />
+              </td>
             ))}
             <td />
           </tr>
