@@ -10,7 +10,18 @@ import './index.css';
 import App from './App';
 import { registerSW } from 'virtual:pwa-register';
 
-registerSW({ immediate: true });
+registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    console.log('[PWA] محتوى جديد متاح');
+  },
+  onOfflineReady() {
+    console.log('[PWA] التطبيق جاهز تماماً للعمل بدون إنترنت');
+  },
+  onRegisterError(error) {
+    console.warn('[PWA] خطأ في تسجيل Service Worker:', error);
+  },
+});
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

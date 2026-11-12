@@ -7,7 +7,10 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icons/*.png', 'tess/*'],
+      devOptions: {
+        enabled: true,
+      },
+      includeAssets: ['icons/*.png', 'vite.svg'],
       manifest: {
         name: 'منظومة أجندة التدريب القتالى',
         short_name: 'أجندة التدريب',
@@ -21,10 +24,29 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // precache every file, including the OCR worker, wasm core and the Arabic model
-        globPatterns: ['**/*.{js,mjs,css,html,png,svg,woff,woff2,wasm,traineddata,json}'],
-        maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
+        // precache core UI shell and assets (<2MB) so install completes in <1s
+        globPatterns: ['**/*.{js,mjs,css,html,png,svg,woff,woff2,json}'],
+        globIgnores: ['**/tess/**'],
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
         navigateFallback: '/index.html',
+        cleanupOutdatedCaches: true,
+        runtimeCaching: [
+          {
+            // cache OCR wasm and language model on-demand or idle without blocking SW installation
+            urlPattern: /\/tess\/.*|\.(?:wasm|traineddata)$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'tesseract-assets',
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+        ],
       },
     }),
   ],
