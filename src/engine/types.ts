@@ -145,18 +145,18 @@ export interface DistributionResult {
   mainCell: Cell; generalCell: Cell;
   techLevels: Record<Level, Cell>;
   levelPeriods: Record<Level, { day: number; night: number; weeks: number[] }>;
-  checks: { day: boolean; night: boolean; main: boolean; ok: boolean };
+  checks: { day: boolean; night: boolean; main: boolean; parity?: boolean; conflictMessage?: string; ok: boolean };
 }
 
 export interface ColumnTarget { label: string; day: number; night: number; fitness: number; education: number; security: number }
 export interface Breakdown {
   cols: ColumnTarget[]; cells: Cells[]; main: Cell[]; general: Cell[];
-  rowsOk: boolean; colsOk: boolean;
+  rowsOk: boolean; colsOk: boolean; parityOk?: boolean; conflictMessage?: string;
 }
 export interface LinkingResult {
   months: Breakdown;
   weeks: { month: number; weekNumbers: number[]; b: Breakdown }[];
-  checks: { rows: boolean; cols: boolean; ok: boolean };
+  checks: { rows: boolean; cols: boolean; parity?: boolean; conflictMessage?: string; ok: boolean };
 }
 
 export interface SlotEntry { hours: number; lectures: string; text: string }

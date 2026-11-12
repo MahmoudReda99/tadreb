@@ -1,7 +1,7 @@
 import type { AgendaResult, Cell, Cells, DistributionResult, Instructions, Level, SubjectKey } from './types';
 import { ALL_KEYS, getAllKeys, getMainKeys, getGeneralKeys, getNightKeys } from './types';
 import { weekLevels } from './agenda';
-import { nearestEven, sum } from './rounding';
+import { nearestEven, nearestWithParity, sum } from './rounding';
 
 const emptyCells = (keys: SubjectKey[] = ALL_KEYS): Cells => Object.fromEntries(keys.map(k => [k, { day: 0, night: 0 }])) as Cells;
 export const sumCells = (c: Cells, keys: SubjectKey[]): Cell => ({
@@ -15,7 +15,9 @@ export const sumCells = (c: Cells, keys: SubjectKey[]): Cell => ({
 export function calculateDistribution(inst: Instructions, agenda: AgendaResult): DistributionResult {
   const p = inst.pcts;
   const T = agenda.total;
-  const mainTotal = nearestEven((T * p.mainPct) / 100);
+  const fitnessParity = (Math.abs(agenda.fitness) % 2) as 0 | 1;
+  const genParity = (Math.abs(agenda.education + agenda.security) % 2) as 0 | 1;
+  const mainTotal = nearestWithParity((T * p.mainPct) / 100, fitnessParity);
   const generalTotal = T - mainTotal;
 
   const allKeys = getAllKeys(inst);
@@ -85,9 +87,10 @@ export function calculateDistribution(inst: Instructions, agenda: AgendaResult):
   const dayOk = mainCell.day + generalCell.day === agenda.day;
   const nightOk = mainCell.night + generalCell.night === agenda.night;
   const mainOk = mainCell.day + mainCell.night === mainTotal;
+  const parityOk = (Math.abs(mainTotal) % 2 === fitnessParity) && (Math.abs(generalTotal) % 2 === genParity);
   return {
     total: T, mainTotal, generalTotal, nightRatio, nightSubjectsHours, cells, mainCell, generalCell,
     techLevels, levelPeriods: periods,
-    checks: { day: dayOk, night: nightOk, main: mainOk, ok: dayOk && nightOk && mainOk },
+    checks: { day: dayOk, night: nightOk, main: mainOk, parity: parityOk, ok: dayOk && nightOk && mainOk && parityOk },
   };
 }

@@ -64,8 +64,8 @@ export const KEY_108 = {
   } as Record<string, [number, number]>,
   mainTotal: 558, mainNight: 142, generalTotal: 217, generalNight: 30,
   techLevels: { individual: [76, 32], crew: [52, 20], centre: [40, 28] } as Record<string, [number, number]>,
-  /** page 3 rows that are not hand-adjusted in the key */
-  monthMainDay: [62, 82, 82, 90, 62, 38],
+  /** page 3 rows under independent parity constraints (Month 0: 61+20=81 (odd), Month 3: 89+34=123 (odd)) */
+  monthMainDay: [61, 84, 84, 89, 62, 36],
   monthMainNight: [20, 26, 10, 34, 20, 32],
   monthTactics: [[12, 4], [16, 8], [16, 2], [16, 10], [12, 6], [6, 8]],
 };

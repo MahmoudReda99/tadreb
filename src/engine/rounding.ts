@@ -5,6 +5,17 @@ export function nearestEven(x: number): number {
   return Math.round(x / 2 + 1e-9) * 2;
 }
 
+/** Nearest integer with the required parity: 0 for even, 1 for odd. Ties go to the larger candidate. */
+export function nearestWithParity(x: number, parity: 0 | 1): number {
+  const r = Math.round(x);
+  if (Math.abs(r % 2) === parity) return r;
+  const lower = r - 1;
+  const upper = r + 1;
+  const dLower = Math.abs(x - lower);
+  const dUpper = Math.abs(x - upper);
+  return dLower < dUpper ? lower : upper;
+}
+
 /**
  * Largest-remainder allocation in units of 2: splits `total` over columns in
  * proportion to `weights`, every share even (an odd total puts its last hour on

@@ -315,6 +315,11 @@ export function LinkingSheet({ inst, agenda, dist, link, onInspect = noop }: { i
       <div className="checks">
         <span className={'chk ' + (link.checks.rows ? 'ok' : 'bad')}>{link.checks.rows ? '✔ الفحص الأفقى: مجموع كل صف = إجمالى الموضوع' : '✘ الفحص الأفقى'}</span>
         <span className={'chk ' + (link.checks.cols ? 'ok' : 'bad')}>{link.checks.cols ? '✔ الفحص الرأسى: مجموع كل عمود = إجمالى الشهر / الأسبوع' : '✘ الفحص الرأسى'}</span>
+        {link.checks.parity !== undefined && (
+          <span className={'chk ' + (link.checks.parity ? 'ok' : 'bad')}>
+            {link.checks.parity ? '✔ قيود الفردية والزوجية: متوافقة لكل شهر والإجمالي' : `✘ ${link.checks.conflictMessage || 'تعارض في قيود الفردية والزوجية'}`}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -455,6 +460,11 @@ export function MonthDetailSheet({ inst, dist, link, onInspect = noop }: { inst:
         <span className={'chk ' + (wk.b.colsOk ? 'ok' : 'bad')}>
           {wk.b.colsOk ? '✔ الفحص الرأسى: مجموع كل أسبوع = ساعات الأسبوع فى الأجندة' : '✘ الفحص الرأسى'}
         </span>
+        {wk.b.parityOk !== undefined && (
+          <span className={'chk ' + (wk.b.parityOk ? 'ok' : 'bad')}>
+            {wk.b.parityOk ? '✔ قيود الفردية والزوجية لأسابيع الشهر: متوافقة' : `✘ ${wk.b.conflictMessage || 'تعارض في قيود الفردية والزوجية'}`}
+          </span>
+        )}
       </div>
     </div>
   );

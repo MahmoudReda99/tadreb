@@ -1,6 +1,6 @@
 import type { AgendaResult, Breakdown, Cell, Cells, ColumnTarget, DistributionResult, Instructions, LinkingResult, SubjectKey } from './types';
 import { getAllKeys, getMainKeys, getGeneralKeys, getNightKeys } from './types';
-import { allocateEven, sum } from './rounding';
+import { allocateEven, nearestEven, nearestWithParity, sum } from './rounding';
 import { monthNames } from './dates';
 
 /**
@@ -88,6 +88,144 @@ function repair(balance: number[], rows: number[][], quotas: number[][]) {
 const quotaOf = (total: number, w: number[]) => { const t = sum(w); return w.map(x => (t ? (total * x) / t : 0)); };
 
 /**
+ * Allocates main hours across columns ensuring independent parity constraints:
+ * 1. For each column, main total has the same parity as fitness.
+ * 2. General total has the same parity as (education + security).
+ * 3. Sum of column main totals equals grandMainTotal.
+ * 4. Reconciliation uses smart +/- 2 redistribution to preserve parity.
+ */
+export function allocateMainWithParity(
+  grandMainTotal: number,
+  cols: ColumnTarget[],
+  mainPct: number = 72,
+  grandNightMainTotal?: number,
+): {
+  mainDays: number[];
+  mainNights: number[];
+  parityOk: boolean;
+  conflictMessage?: string;
+} {
+  const N = cols.length;
+  if (N === 0) {
+    return { mainDays: [], mainNights: [], parityOk: true };
+  }
+
+  const totals = cols.map(c => c.day + c.night);
+  const fitness = cols.map(c => c.fitness ?? 0);
+  const edu = cols.map(c => c.education ?? 0);
+  const sec = cols.map(c => c.security ?? 0);
+  const genConstraints = cols.map((_, i) => edu[i] + sec[i]);
+
+  let conflict = false;
+  let conflictMessage: string | undefined;
+
+  // Check mathematical feasibility of constraints for each column
+  for (let i = 0; i < N; i++) {
+    const tParity = Math.abs(totals[i] % 2);
+    const sumConstraintParity = Math.abs((fitness[i] + genConstraints[i]) % 2);
+    if (tParity !== sumConstraintParity) {
+      conflict = true;
+      conflictMessage = `تعارض فى قيود الفردية والزوجية للعمود ${cols[i].label || i + 1}: إجمالى الساعات (${totals[i]}) لا يتوافق مع مجموع ساعات القيود (${fitness[i] + genConstraints[i]}).`;
+    }
+  }
+
+  // 1. Initial independent calculation for each column
+  const M = cols.map((_, i) => {
+    if (totals[i] === 0) return 0;
+    const Xi = (totals[i] * mainPct) / 100;
+    const reqParity = (Math.abs(fitness[i]) % 2) as 0 | 1;
+    let m = nearestWithParity(Xi, reqParity);
+
+    const minM = fitness[i];
+    const maxM = Math.max(minM, totals[i] - genConstraints[i]);
+    while (m < minM) m += 2;
+    while (m > maxM && m - 2 >= minM) m -= 2;
+    return m;
+  });
+
+  // 2. Reconcile monthly sum with grandMainTotal
+  let diff = grandMainTotal - sum(M);
+
+  if (Math.abs(diff % 2) !== 0) {
+    conflict = true;
+    if (!conflictMessage) {
+      conflictMessage = 'تعارض رياضى: مجموع قيود الفردية والزوجية للأعمدة لا يتطابق مع الإجمالى النهائى.';
+    }
+  } else {
+    // Diff is even: adjust in steps of +/- 2
+    while (diff > 0) {
+      let bestIdx = -1;
+      let bestCost = Infinity;
+      for (let i = 0; i < N; i++) {
+        if (totals[i] === 0) continue;
+        const maxM = Math.max(fitness[i], totals[i] - genConstraints[i]);
+        if (M[i] + 2 <= maxM) {
+          const Xi = (totals[i] * mainPct) / 100;
+          const costChange = Math.abs(M[i] + 2 - Xi) - Math.abs(M[i] - Xi);
+          if (costChange < bestCost) {
+            bestCost = costChange;
+            bestIdx = i;
+          }
+        }
+      }
+      if (bestIdx < 0) {
+        conflict = true;
+        if (!conflictMessage) {
+          conflictMessage = 'تعذر استيعاب ساعات الموضوعات الرئيسية ضمن السعة المتاحة دون كسر القيود.';
+        }
+        break;
+      }
+      M[bestIdx] += 2;
+      diff -= 2;
+    }
+
+    while (diff < 0) {
+      let bestIdx = -1;
+      let bestCost = Infinity;
+      for (let i = 0; i < N; i++) {
+        if (totals[i] === 0) continue;
+        const minM = fitness[i];
+        if (M[i] - 2 >= minM) {
+          const Xi = (totals[i] * mainPct) / 100;
+          const costChange = Math.abs(M[i] - 2 - Xi) - Math.abs(M[i] - Xi);
+          if (costChange < bestCost) {
+            bestCost = costChange;
+            bestIdx = i;
+          }
+        }
+      }
+      if (bestIdx < 0) {
+        conflict = true;
+        if (!conflictMessage) {
+          conflictMessage = 'تعذر تخفيض ساعات الموضوعات الرئيسية دون كسر قيد التربية البدنية.';
+        }
+        break;
+      }
+      M[bestIdx] -= 2;
+      diff += 2;
+    }
+  }
+
+  // 3. Allocate Main Night (always even)
+  const nightW = cols.map(c => c.night);
+  const maxNightCap = cols.map((c, i) => Math.max(0, Math.min(c.night, M[i] - fitness[i])));
+  const targetNight = grandNightMainTotal ?? nearestEven((grandMainTotal * sum(nightW)) / Math.max(1, sum(totals)));
+  const mainNights = allocateEvenCapped(targetNight, nightW, maxNightCap);
+  const mainDays = M.map((m, i) => m - mainNights[i]);
+
+  const parityOk = !conflict && cols.every((c, i) => {
+    if (totals[i] === 0) return true;
+    const mParity = Math.abs(M[i] % 2);
+    const gParity = Math.abs((totals[i] - M[i]) % 2);
+    const fitP = Math.abs((c.fitness ?? 0) % 2);
+    const genP = Math.abs(((c.education ?? 0) + (c.security ?? 0)) % 2);
+    return mParity === fitP && gParity === genP;
+  });
+
+  return { mainDays, mainNights, parityOk, conflictMessage };
+}
+
+/**
  * Splits subject totals (`rows`) over columns (months, or the weeks of one month).
  * cell = subjectTotal × columnTotal / grandTotal, rounded to even with largest remainder;
  * fitness / education / security come from the agenda; shooting balances the column's main
@@ -105,12 +243,15 @@ export function breakdown(rows: Cells, cols: ColumnTarget[], inst?: Instructions
   const rowDay = (k: SubjectKey) => rows[k]?.day || 0; const rowNight = (k: SubjectKey) => rows[k]?.night || 0;
   const mainDayTot = sum(mainKeys.map(k => rowDay(k)));
   const mainNightTot = sum(mainKeys.map(k => rowNight(k)));
-  // Cap: main subjects can never exceed the free hours left after mandatory constraint subjects.
-  // This prevents negative cells in weeks/months with very few hours (e.g. holiday weeks).
-  const maxMainDay = cols.map(c => Math.max(0, c.day - c.education - c.security));
-  const maxMainNight = cols.map(c => Math.max(0, c.night));
-  const mainDay = allocateEvenCapped(mainDayTot, dayW, maxMainDay);
-  const mainNight = allocateEvenCapped(mainNightTot, nightW, maxMainNight);
+  const grandMain = mainDayTot + mainNightTot;
+
+  const mainPct = inst?.pcts?.mainPct ?? 72;
+  const { mainDays: mainDay, mainNights: mainNight, parityOk, conflictMessage } = allocateMainWithParity(
+    grandMain,
+    cols,
+    mainPct,
+    mainNightTot,
+  );
   const genDay = cols.map((c, i) => c.day - mainDay[i]); const genNight = cols.map((c, i) => c.night - mainNight[i]);
 
   const keysFixed: SubjectKey[] = ['fitness', 'education', 'security'];
@@ -155,7 +296,7 @@ export function breakdown(rows: Cells, cols: ColumnTarget[], inst?: Instructions
   const colsOk = out.every((_o, i) => main[i].day + general[i].day === cols[i].day && main[i].night + general[i].night === cols[i].night)
     && out.every(o => allKeys.every(k => (o[k]?.day || 0) >= 0 && (o[k]?.night || 0) >= 0));
   void C;
-  return { cols, cells: out, main, general, rowsOk, colsOk };
+  return { cols, cells: out, main, general, rowsOk, colsOk, parityOk, conflictMessage };
 }
 
 /** Page 3: months, plus the week split of every month (ops week = 0). */
@@ -176,5 +317,7 @@ export function calculateLinking(inst: Instructions, agenda: AgendaResult, dist:
   });
   const rows = months.rowsOk && weeks.every(w => w.b.rowsOk);
   const colsOk = months.colsOk && weeks.every(w => w.b.colsOk);
-  return { months, weeks, checks: { rows, cols: colsOk, ok: rows && colsOk } };
+  const parityOk = (months.parityOk ?? true) && weeks.every(w => w.b.parityOk ?? true);
+  const conflictMessage = months.conflictMessage || weeks.find(w => w.b.conflictMessage)?.b.conflictMessage;
+  return { months, weeks, checks: { rows, cols: colsOk, parity: parityOk, conflictMessage, ok: rows && colsOk && parityOk } };
 }
