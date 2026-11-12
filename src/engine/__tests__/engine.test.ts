@@ -229,6 +229,30 @@ describe('custom subjects & night study flag', () => {
     expect(cLink.checks.ok).toBe(true);
   });
 
+  it('supports deleting and disabling subjects with balanced calculations', () => {
+    // Disable 'history' (general subject) and balance with infoWar
+    const modifiedInst = {
+      ...F,
+      disabledSubjects: ['history'],
+      pcts: {
+        ...F.pcts,
+        history: 0,
+        infoWar: F.pcts.infoWar + F.pcts.history, // 2 + 2 = 4%
+      },
+    };
+    const cAgenda = calculateAgenda(modifiedInst);
+    const cDist = calculateDistribution(modifiedInst, cAgenda);
+    expect(cDist.checks.ok).toBe(true);
+    expect(cDist.cells['history']).toBeUndefined();
+    expect(cDist.cells['infoWar'].day + cDist.cells['infoWar'].night).toBeGreaterThan(0);
+
+    const cLink = calculateLinking(modifiedInst, cAgenda, cDist);
+    expect(cLink.checks.ok).toBe(true);
+    for (const col of cLink.months.cells) {
+      expect(col['history']).toBeUndefined();
+    }
+  });
+
   it('verifies that in every week and every day, lectures are sorted strictly ascending top-to-bottom', () => {
     for (let w = 1; w <= 26; w++) {
       const ex = calculateWeekly(agenda, link, w, F);

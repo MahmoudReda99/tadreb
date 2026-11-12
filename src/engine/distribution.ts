@@ -29,10 +29,14 @@ export function calculateDistribution(inst: Instructions, agenda: AgendaResult):
 
   tot.fitness = agenda.fitness; tot.education = agenda.education; tot.security = agenda.security;
   for (const k of ['tactics', 'tech', 'discipline', 'topography', 'morale', 'recon', 'engineering', 'chemical', 'admin', 'history', 'intlLaw'] as SubjectKey[]) {
-    tot[k] = nearestEven((T * (p[k as keyof typeof p] ?? 0)) / 100);
+    if (allKeys.includes(k)) {
+      tot[k] = nearestEven((T * (p[k as keyof typeof p] ?? 0)) / 100);
+    }
   }
   for (const s of (inst.customSubjects || [])) {
-    tot[s.id] = nearestEven((T * (s.pct ?? 0)) / 100);
+    if (allKeys.includes(s.id)) {
+      tot[s.id] = nearestEven((T * (s.pct ?? 0)) / 100);
+    }
   }
 
   // shooting balances main
@@ -56,8 +60,10 @@ export function calculateDistribution(inst: Instructions, agenda: AgendaResult):
       night[k] = Math.min(tot[k] || 0, nearestEven((tot[k] || 0) * nightRatio));
     }
   }
-  const otherNight = sum(activeNightKeys.filter(k => k !== nightBalancer).map(k => night[k] || 0));
-  night[nightBalancer] = Math.max(0, agenda.night - otherNight);
+  if (nightBalancer && activeNightKeys.length > 0) {
+    const otherNight = sum(activeNightKeys.filter(k => k !== nightBalancer).map(k => night[k] || 0));
+    night[nightBalancer] = Math.max(0, agenda.night - otherNight);
+  }
 
   const cells = emptyCells(allKeys);
   for (const k of allKeys) cells[k] = { day: Math.max(0, (tot[k] || 0) - (night[k] || 0)), night: night[k] || 0 };
@@ -75,7 +81,7 @@ export function calculateDistribution(inst: Instructions, agenda: AgendaResult):
     const centre = all ? nearestEven((hours * periods.centre[key]) / all) : 0;
     return { crew, centre, individual: hours - crew - centre };
   };
-  const d = split(cells.tech.day, 'day'); const n = split(cells.tech.night, 'night');
+  const d = split(cells.tech?.day || 0, 'day'); const n = split(cells.tech?.night || 0, 'night');
   const techLevels = {
     individual: { day: d.individual, night: n.individual },
     crew: { day: d.crew, night: n.crew },

@@ -33,6 +33,7 @@ export interface Instructions {
   selectedWeek: number;
   nightKeys?: string[];
   customSubjects?: CustomSubject[];
+  disabledSubjects?: string[];
 }
 
 export interface CustomSubject {
@@ -105,13 +106,17 @@ export const SUBJECT_SHORT: Record<string, string> = {
 };
 
 export function getMainKeys(inst?: Instructions): SubjectKey[] {
-  const custom = (inst?.customSubjects || []).filter(s => s.category === 'main').map(s => s.id);
-  return [...MAIN_KEYS, ...custom];
+  const disabled = new Set(inst?.disabledSubjects || []);
+  const base = MAIN_KEYS.filter(k => !disabled.has(k));
+  const custom = (inst?.customSubjects || []).filter(s => s.category === 'main' && !disabled.has(s.id)).map(s => s.id);
+  return [...base, ...custom];
 }
 
 export function getGeneralKeys(inst?: Instructions): SubjectKey[] {
-  const custom = (inst?.customSubjects || []).filter(s => s.category === 'general').map(s => s.id);
-  return [...GENERAL_KEYS, ...custom];
+  const disabled = new Set(inst?.disabledSubjects || []);
+  const base = GENERAL_KEYS.filter(k => !disabled.has(k));
+  const custom = (inst?.customSubjects || []).filter(s => s.category === 'general' && !disabled.has(s.id)).map(s => s.id);
+  return [...base, ...custom];
 }
 
 export function getAllKeys(inst?: Instructions): SubjectKey[] {
@@ -119,11 +124,12 @@ export function getAllKeys(inst?: Instructions): SubjectKey[] {
 }
 
 export function getNightKeys(inst?: Instructions): SubjectKey[] {
-  const customNight = (inst?.customSubjects || []).filter(s => s.hasNight).map(s => s.id);
+  const disabled = new Set(inst?.disabledSubjects || []);
+  const customNight = (inst?.customSubjects || []).filter(s => s.hasNight && !disabled.has(s.id)).map(s => s.id);
   if (inst?.nightKeys && Array.isArray(inst.nightKeys)) {
-    return Array.from(new Set([...inst.nightKeys, ...customNight]));
+    return Array.from(new Set([...inst.nightKeys.filter(k => !disabled.has(k)), ...customNight]));
   }
-  return Array.from(new Set([...NIGHT_KEYS, ...customNight]));
+  return Array.from(new Set([...NIGHT_KEYS.filter(k => !disabled.has(k)), ...customNight]));
 }
 
 export function getSubjectName(k: string, inst?: Instructions): string {

@@ -19,5 +19,6 @@ export function emptyInstructions(): Instructions {
     selectedMonth: 4, selectedWeek: 20,
     nightKeys: ['tactics', 'tech', 'shooting', 'topography', 'recon', 'engineering', 'chemical'],
     customSubjects: [],
+    disabledSubjects: [],
   };
 }

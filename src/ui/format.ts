@@ -10,7 +10,7 @@ export const KIND_COLORS: Record<DayKind, { bg: string; fg: string; label: strin
   prep: { bg: '#FEF08A', fg: '#111', label: 'فترة تحضيرية' },
   short: { bg: '#BBF7D0', fg: '#111', label: 'يوم قصير' },
   long: { bg: '#BAE6FD', fg: '#111', label: 'يوم طويل' },
-  holiday: { bg: '#FECACA', fg: '#111', label: 'أجازة' },
+  holiday: { bg: '#DC2626', fg: '#fff', label: 'أجازة' },
   maintenance: { bg: '#FED7AA', fg: '#111', label: 'صيانة' },
   personnel: { bg: '#E2E8F0', fg: '#111', label: 'شئون أفراد' },
   friday: { bg: '#78350F', fg: '#fff', label: 'راحة أسبوعية' },

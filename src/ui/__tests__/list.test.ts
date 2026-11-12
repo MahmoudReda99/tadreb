@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDate, parseDate, parseList, parseNum, toArabic } from '../parseInput';
+import { formatDate, parseBulkHolidays, parseDate, parseList, parseNum, toArabic } from '../parseInput';
 
 describe('week lists', () => {
   it('any non-digit separates the numbers', () => {
@@ -56,6 +56,34 @@ describe('dates written any way', () => {
     expect(parseDate('7/1', ctx)).toBe('2024-01-07');
     expect(parseDate('30-12', ctx)).toBe('2023-12-30');
     expect(parseDate('٢٥/٤', ctx)).toBe('2024-04-25');
+  });
+  it('deduces year from yearLabel and startSaturday for 2-part dates like 12-7', () => {
+    const ctx = {
+      yearLabel: '2026 / 2027',
+      startSaturday: '2026-10-03',
+      from: '2026-10-03',
+      to: '2027-04-03',
+    };
+    expect(parseDate('12-7', ctx)).toBe('2027-07-12');
+    expect(parseDate('12/7', ctx)).toBe('2027-07-12');
+    expect(parseDate('١٢-٧', ctx)).toBe('2027-07-12');
+    expect(parseDate('6-10', ctx)).toBe('2026-10-06');
+    expect(parseDate('7-1', ctx)).toBe('2027-01-07');
+    expect(parseDate('25-4', ctx)).toBe('2027-04-25');
+    expect(parseDate('1-5', ctx)).toBe('2027-05-01');
+    expect(parseDate('23-7', ctx)).toBe('2027-07-23');
+  });
+  it('parses bulk holidays text', () => {
+    const ctx = { yearLabel: '2026 / 2027', startSaturday: '2026-10-03' };
+    const bulk = '6-10، 7-1, 25-4\n12-7 إلى 15-7\n23-7';
+    const res = parseBulkHolidays(bulk, ctx);
+    expect(res).toEqual([
+      { from: '2026-10-06', to: null },
+      { from: '2027-01-07', to: null },
+      { from: '2027-04-25', to: null },
+      { from: '2027-07-12', to: '2027-07-15' },
+      { from: '2027-07-23', to: null },
+    ]);
   });
   it('rejects impossible dates', () => {
     expect(parseDate('31-2-2026')).toBeNull();

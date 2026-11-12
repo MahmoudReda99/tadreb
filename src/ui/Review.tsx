@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { CustomSubject, DateRange, Instructions, SubjectPcts } from '../engine/types';
+import type { CustomSubject, DateRange, Instructions, SubjectKey, SubjectPcts } from '../engine/types';
 import { getNightKeys } from '../engine/types';
 import { LOW } from '../parser/parse';
 import { DAYS_AR, addDays, defaultWeeksPerMonth, dowOf, monthNames } from '../engine/dates';
-import { formatDate, parseDate, parseList, parseNum, toArabic, toLatin } from './parseInput';
+import { formatDate, parseBulkHolidays, parseDate, parseList, parseNum, toArabic, toLatin, type DateCtx } from './parseInput';
 
 interface Props {
   inst: Instructions;
@@ -72,64 +72,268 @@ function ListInput({ value, onCommit, sorted = true, min, max }: { value: number
   );
 }
 
-type Ctx2 = { from?: string; to?: string };
+type Ctx2 = DateCtx;
 const WEEKDAY = (iso: string) => DAYS_AR[dowOf(iso)];
 
-/** a date typed any way (3-4-2026, 3/4, 2026-04-03, ٣ أبريل ٢٠٢٦…); shows what it understood while typing */
-function DateInput({ value, onCommit, ctx, optional, placeholder = 'مثال: ٣-٤-٢٠٢٦', label }: { value: string | null | undefined; onCommit: (iso: string | null) => void; ctx?: Ctx2; optional?: boolean; placeholder?: string; label?: string }) {
+/** a date typed any way (12-7, 3-4-2026, 3/4, 2026-04-03, ٣ أبريل ٢٠٢٦…); auto-completes year on blur/Enter */
+function DateInput({
+  value,
+  onCommit,
+  ctx,
+  optional,
+  placeholder = 'مثال: ٧-١ أو ٦-١٠ أو ٣-٤-٢٠٢٦',
+  label,
+  onEnter,
+  inputRef,
+}: {
+  value: string | null | undefined;
+  onCommit: (iso: string | null) => void;
+  ctx?: Ctx2;
+  optional?: boolean;
+  placeholder?: string;
+  label?: string;
+  onEnter?: () => void;
+  inputRef?: React.Ref<HTMLInputElement>;
+}) {
   const shown = formatDate(value);
   const [text, setText] = useState(shown);
   const [bad, setBad] = useState(false);
   const [focus, setFocus] = useState(false);
-  useEffect(() => { if (!focus && !bad) setText(shown); }, [shown, focus, bad]);
+
+  useEffect(() => {
+    if (!focus && !bad) setText(shown);
+  }, [shown, focus, bad]);
+
   const iso = text.trim() ? parseDate(text, ctx) : null;
+
+  const commitDate = () => {
+    if (iso) {
+      setText(formatDate(iso));
+      onCommit(iso);
+      setBad(false);
+    } else if (!text.trim()) {
+      setBad(false);
+      if (optional) onCommit(null);
+    } else {
+      setBad(true);
+    }
+  };
+
   return (
     <>
-      <input value={text} inputMode="text" dir="auto" placeholder={placeholder} aria-label={label} aria-invalid={bad}
-        onFocus={e => { setFocus(true); e.target.select(); }}
-        onBlur={() => { setFocus(false); if (!bad) setText(shown); }}
+      <input
+        ref={inputRef}
+        value={text}
+        inputMode="text"
+        dir="auto"
+        placeholder={placeholder}
+        aria-label={label}
+        aria-invalid={bad}
+        onFocus={e => {
+          setFocus(true);
+          e.target.select();
+        }}
+        onBlur={() => {
+          setFocus(false);
+          commitDate();
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commitDate();
+            if (onEnter) onEnter();
+          }
+        }}
         onChange={e => {
-          const raw = keepDate(e.target.value); setText(toArabic(raw));
-          if (!raw.trim()) { setBad(false); if (optional) onCommit(null); return; }
+          const raw = keepDate(e.target.value);
+          setText(toArabic(raw));
+          if (!raw.trim()) {
+            setBad(false);
+            if (optional) onCommit(null);
+            return;
+          }
           const d = parseDate(raw, ctx);
-          setBad(!d);
+          setBad(false);
           if (d) onCommit(d);
-        }} />
+        }}
+      />
       {focus && iso && <small className="ok">← {WEEKDAY(iso)} {formatDate(iso)}</small>}
-      {bad && <small className="warn">لم أفهم هذا التاريخ — اكتبه أرقاماً مثل ٣-٤-٢٠٢٦ أو ٣/٤/٢٠٢٦.</small>}
+      {bad && <small className="warn">لم أفهم هذا التاريخ — اكتبه أرقاماً مثل ٧-١ أو ٣-٤-٢٠٢٦.</small>}
     </>
   );
 }
 
 interface HRow { id: number; from: string | null; to: string | null }
 /** official holidays: one row per holiday, "from" and an optional "to" for several days */
-function HolidayList({ value, onCommit, ctx }: { value: (string | DateRange)[]; onCommit: (v: (string | DateRange)[]) => void; ctx: Ctx2 }) {
+function HolidayList({
+  value,
+  onCommit,
+  ctx,
+}: {
+  value: (string | DateRange)[];
+  onCommit: (v: (string | DateRange)[]) => void;
+  ctx: Ctx2;
+}) {
   const seq = useRef(0);
-  const [rows, setRows] = useState<HRow[]>(() => value.map(h => ({ id: ++seq.current, from: typeof h === 'string' ? h : h.from, to: typeof h === 'string' ? null : h.to })));
+  const [rows, setRows] = useState<HRow[]>(() =>
+    value.map(h => ({
+      id: ++seq.current,
+      from: typeof h === 'string' ? h : h.from,
+      to: typeof h === 'string' ? null : h.to,
+    }))
+  );
+  const [focusRowId, setFocusRowId] = useState<number | null>(null);
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
+
   const push = (next: HRow[]) => {
     setRows(next);
-    onCommit(next.filter(r => r.from).map(r => (r.to && r.to > r.from! ? { from: r.from!, to: r.to } : r.from!)));
+    onCommit(
+      next
+        .filter(r => r.from)
+        .map(r => (r.to && r.to > r.from! ? { from: r.from!, to: r.to } : r.from!))
+    );
   };
-  const upd = (id: number, patch: Partial<HRow>) => push(rows.map(r => (r.id === id ? { ...r, ...patch } : r)));
-  const days = (r: HRow) => (r.from && r.to && r.to >= r.from ? Math.round((Date.parse(r.to) - Date.parse(r.from)) / 864e5) + 1 : 0);
+
+  const upd = (id: number, patch: Partial<HRow>) =>
+    push(rows.map(r => (r.id === id ? { ...r, ...patch } : r)));
+
+  const days = (r: HRow) =>
+    r.from && r.to && r.to >= r.from
+      ? Math.round((Date.parse(r.to) - Date.parse(r.from)) / 864e5) + 1
+      : 0;
+
+  const addNewRow = () => {
+    const newId = ++seq.current;
+    push([...rows, { id: newId, from: null, to: null }]);
+    setFocusRowId(newId);
+  };
+
+  const handleRowEnter = (index: number) => {
+    if (index === rows.length - 1) {
+      addNewRow();
+    } else {
+      setFocusRowId(rows[index + 1].id);
+    }
+  };
+
+  const handleBulkAdd = () => {
+    const parsed = parseBulkHolidays(bulkText, ctx);
+    if (parsed.length === 0) {
+      setBulkMsg('لم يتم التعرف على أية تواريخ صالحة. تأكد من الصيغة (مثال: 6-10، 7-1).');
+      return;
+    }
+    const newRows: HRow[] = parsed.map(p => ({
+      id: ++seq.current,
+      from: p.from,
+      to: p.to,
+    }));
+    const existingActive = rows.filter(r => r.from);
+    push([...existingActive, ...newRows]);
+    setBulkText('');
+    setBulkMsg(`✓ تمت إضافة ${toArabic(String(parsed.length))} أجازات بنجاح.`);
+  };
+
   return (
     <div className="hol">
-      {rows.length === 0 && <small>لا توجد أجازات — اضغط «إضافة أجازة».</small>}
+      <div className="hol-top-actions">
+        <button
+          type="button"
+          className="mini ghost"
+          onClick={() => { setShowBulk(!showBulk); setBulkMsg(null); }}
+        >
+          {showBulk ? '✕ إغلاق الإضافة السريعة' : '⚡ إضافة سريعة / لصق عدة تواريخ دفعة واحدة'}
+        </button>
+      </div>
+
+      {showBulk && (
+        <div className="hol-bulk-box">
+          <small>
+            يمكنك إدخال عدة أجازات دفعة واحدة (اليوم والشهر فقط مثل <strong>١٢-٧</strong> أو <strong>٦-١٠</strong> وسيتم استنتاج العام تلقائياً). افصل بينها بفاصلة (،) أو اجعل كل تاريخ في سطر:
+          </small>
+          <textarea
+            rows={3}
+            dir="auto"
+            value={bulkText}
+            onChange={e => { setBulkText(e.target.value); setBulkMsg(null); }}
+            placeholder={`مثال:\n6-10\n7-1\n25-1\n25-4\n1-5\n12-7\n23-7`}
+          />
+          <div className="hol-bulk-actions">
+            <button
+              type="button"
+              className="mini primary"
+              onClick={handleBulkAdd}
+              disabled={!bulkText.trim()}
+            >
+              + إدراج كل الأجازات المكتوبة
+            </button>
+            {bulkMsg && <span className="hol-bulk-msg">{bulkMsg}</span>}
+          </div>
+        </div>
+      )}
+
+      {rows.length === 0 && <small>لا توجد أجازات — اضغط «إضافة أجازة» أو استخدم «الإضافة السريعة».</small>}
+
       {rows.map((r, i) => (
         <div className="hol-row" key={r.id}>
           <div className="hol-head">
             <span className="no">{toArabic(String(i + 1))}</span>
-            <span className="when">{r.from ? `${WEEKDAY(r.from)} ${formatDate(r.from)}${days(r) > 1 ? ` ← ${formatDate(r.to)} (${toArabic(String(days(r)))} أيام)` : ''}` : 'أجازة جديدة'}</span>
-            <button type="button" className="mini danger" onClick={() => push(rows.filter(x => x.id !== r.id))}>حذف</button>
+            <span className="when">
+              {r.from
+                ? `${WEEKDAY(r.from)} ${formatDate(r.from)}${days(r) > 1 ? ` ← ${formatDate(r.to)} (${toArabic(String(days(r)))} أيام)` : ''}`
+                : 'أجازة جديدة (اكتب اليوم والشهر واضغط Enter)'}
+            </span>
+            <button
+              type="button"
+              className="mini danger"
+              onClick={() => push(rows.filter(x => x.id !== r.id))}
+            >
+              حذف
+            </button>
           </div>
           <div className="hol-fields">
-            <label><small>من</small><DateInput value={r.from} ctx={ctx} onCommit={d => upd(r.id, { from: d })} label={`أجازة ${i + 1} من`} /></label>
-            <label><small>إلى (اختيارى — لأكثر من يوم)</small><DateInput value={r.to} ctx={ctx} optional placeholder="فارغ = يوم واحد" onCommit={d => upd(r.id, { to: d })} label={`أجازة ${i + 1} إلى`} /></label>
+            <label>
+              <small>من (اكتب اليوم والشهر فقط مثل 12-7 أو 6-10 واضغط Enter)</small>
+              <DateInput
+                value={r.from}
+                ctx={ctx}
+                placeholder="مثال: ٧-١ أو ٦-١٠"
+                onCommit={d => upd(r.id, { from: d })}
+                label={`أجازة ${i + 1} من`}
+                onEnter={() => handleRowEnter(i)}
+                inputRef={el => {
+                  if (el && r.id === focusRowId) {
+                    el.focus();
+                    setFocusRowId(null);
+                  }
+                }}
+              />
+            </label>
+            <label>
+              <small>إلى (اختيارى — لأكثر من يوم)</small>
+              <DateInput
+                value={r.to}
+                ctx={ctx}
+                optional
+                placeholder="فارغ = يوم واحد"
+                onCommit={d => upd(r.id, { to: d })}
+                label={`أجازة ${i + 1} إلى`}
+                onEnter={() => handleRowEnter(i)}
+              />
+            </label>
           </div>
-          {r.from && r.to && r.to < r.from && <small className="warn">تاريخ النهاية قبل البداية — سيُحسب يوماً واحداً.</small>}
+          {r.from && r.to && r.to < r.from && (
+            <small className="warn">تاريخ النهاية قبل البداية — سيُحسب يوماً واحداً.</small>
+          )}
         </div>
       ))}
-      <button type="button" className="mini" onClick={() => push([...rows, { id: ++seq.current, from: null, to: null }])}>+ إضافة أجازة</button>
+
+      <div className="hol-actions">
+        <button type="button" className="mini" onClick={addNewRow}>
+          + إضافة أجازة
+        </button>
+      </div>
     </div>
   );
 }
@@ -156,6 +360,17 @@ const GEN_SUBJS: [keyof SubjectPcts, string][] = [
   ['infoWar', 'حرب المعلومات'],
 ];
 
+const MANDATORY_KEYS: SubjectKey[] = ['fitness', 'education', 'security', 'shooting', 'infoWar'];
+
+interface DeleteTarget {
+  key: string;
+  name: string;
+  isCustom: boolean;
+  isMandatory: boolean;
+  category: 'main' | 'general';
+  pct: number;
+}
+
 interface Ctx { conf: Record<string, number>; low: (k: string) => boolean; confirm: (k: string) => void }
 const FieldCtx = createContext<Ctx>({ conf: {}, low: () => false, confirm: () => {} });
 function Field({ k, label, children, wide, hint }: { k: string; label: string; children: ReactNode; wide?: boolean; hint?: string }) {
@@ -178,7 +393,12 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
   const names = useMemo(() => monthNames(inst.startSaturday, inst.weeksPerMonth.length), [inst.startSaturday, inst.weeksPerMonth]);
   const low = (k: string) => (conf[k] ?? 1) < LOW && !confirmed.has(k);
   const pending = Object.keys(conf).filter(low);
-  const ctx: Ctx2 = { from: inst.startSaturday, to: addDays(inst.startSaturday, inst.totalWeeks * 7 - 1) };
+  const ctx: Ctx2 = {
+    from: inst.startSaturday,
+    to: addDays(inst.startSaturday, inst.totalWeeks * 7 - 1),
+    yearLabel: inst.yearLabel,
+    startSaturday: inst.startSaturday,
+  };
   const set = <K extends keyof Instructions>(k: K, v: Instructions[K], key: string = k as string) => onChange({ ...inst, [k]: v }, key);
 
   const currentNightKeys = getNightKeys(inst);
@@ -215,18 +435,69 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
     onChange({ ...inst, customSubjects: nextCustom, nightKeys: nextNight }, 'pcts');
   };
 
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+
+  const disabledSet = new Set(inst.disabledSubjects || []);
+  const visibleMain = MAIN_SUBJS.filter(([k]) => !disabledSet.has(k));
+  const visibleGen = GEN_SUBJS.filter(([k]) => !disabledSet.has(k));
+  const disabledMain = MAIN_SUBJS.filter(([k]) => disabledSet.has(k));
+  const disabledGen = GEN_SUBJS.filter(([k]) => disabledSet.has(k));
+
   const removeCustomSubject = (id: string) => {
     const nextCustom = (inst.customSubjects || []).filter(s => s.id !== id);
     const nextNight = currentNightKeys.filter(k => k !== id);
     onChange({ ...inst, customSubjects: nextCustom, nightKeys: nextNight }, 'pcts');
   };
 
-  const mainSubjectsSum = inst.pcts.tactics + inst.pcts.tech + inst.pcts.shooting + inst.pcts.fitness
+  const handleDeleteClick = (key: string, name: string, isCustom: boolean, category: 'main' | 'general', pct: number) => {
+    const isMandatory = MANDATORY_KEYS.includes(key as SubjectKey);
+    setDeleteTarget({ key, name, isCustom, isMandatory, category, pct });
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
+    if (deleteTarget.isMandatory) {
+      setDeleteTarget(null);
+      return;
+    }
+    if (deleteTarget.isCustom) {
+      removeCustomSubject(deleteTarget.key);
+    } else {
+      const nextDisabled = Array.from(new Set([...(inst.disabledSubjects || []), deleteTarget.key]));
+      const nextPct = { ...inst.pcts, [deleteTarget.key]: 0 };
+      const nextNight = currentNightKeys.filter(k => k !== deleteTarget.key);
+      onChange({
+        ...inst,
+        disabledSubjects: nextDisabled,
+        pcts: nextPct,
+        nightKeys: nextNight,
+      }, 'pcts');
+    }
+    setDeleteTarget(null);
+  };
+
+  const handleRestoreSubject = (key: string) => {
+    const nextDisabled = (inst.disabledSubjects || []).filter(k => k !== key);
+    onChange({
+      ...inst,
+      disabledSubjects: nextDisabled,
+    }, 'pcts');
+  };
+
+  const mainSubjectsSum = visibleMain.reduce((acc, [k]) => acc + (inst.pcts[k] || 0), 0)
     + (inst.customSubjects || []).filter(s => s.category === 'main').reduce((acc, s) => acc + (s.pct || 0), 0);
-  const genSubjectsSum = inst.pcts.education + inst.pcts.discipline + inst.pcts.security + inst.pcts.topography
-    + inst.pcts.morale + inst.pcts.recon + inst.pcts.engineering + inst.pcts.chemical
-    + inst.pcts.admin + inst.pcts.history + inst.pcts.intlLaw + inst.pcts.infoWar
+  const genSubjectsSum = visibleGen.reduce((acc, [k]) => acc + (inst.pcts[k] || 0), 0)
     + (inst.customSubjects || []).filter(s => s.category === 'general').reduce((acc, s) => acc + (s.pct || 0), 0);
+
+  const totalSubjectsSum = mainSubjectsSum + genSubjectsSum;
+  const targetMain = inst.pcts.mainPct;
+  const targetGen = 100 - targetMain;
+
+  const mainOk = mainSubjectsSum === targetMain;
+  const genOk = genSubjectsSum === targetGen;
+  const totalOk = totalSubjectsSum === 100;
+  const allPctsOk = mainOk && genOk && totalOk;
+  const canAccept = pending.length === 0 && allPctsOk;
 
   return (
     <FieldCtx.Provider value={{ conf, low, confirm: onConfirmField }}>
@@ -253,7 +524,7 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
             <div><small>إلى</small><DateInput value={inst.ramadan?.to} ctx={ctx} optional onCommit={d => set('ramadan', inst.ramadan ? { ...inst.ramadan, to: d ?? inst.ramadan.from } : d ? { from: d, to: d } : null, 'ramadan')} label="رمضان إلى" /></div>
           </div>
         </Field>
-        <Field k="holidays" label="الأجازات الرسمية" wide hint="أجازة لكل صف. اكتب تاريخ البداية بأى شكل (٣-٤-٢٠٢٦ أو ٣/٤ فقط وسيُفهم العام من الفترة). ولأجازة أكثر من يوم اكتب تاريخ النهاية أيضاً.">
+        <Field k="holidays" label="الأجازات الرسمية" wide hint="أجازة لكل صف. اكتب اليوم والشهر فقط (مثل 12-7 أو 6-10) وسيتم استنتاج العام تلقائياً وإكماله. اضغط Enter للانتقال للصف التالي مباشرة، أو استخدم «الإضافة السريعة» للصق عدة تواريخ دفعة واحدة.">
           <HolidayList value={inst.holidays} ctx={ctx} onCommit={v => set('holidays', v)} />
         </Field>
         <Field k="weeksPerMonth" label="عدد أسابيع كل شهر (قابل للتعديل)" wide hint="كم أسبوعاً يُحسب لكل شهر فى جداول الامتحان. مجموعها يساوى عدد الأسابيع.">
@@ -307,12 +578,38 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
           </div>
         </Field>
         <Field k="pcts" label="النسب المئوية للموضوعات والدراسة الليلية" hint="حدد نسبة كل موضوع، وأشر بعلامة (🌙 دراسة ليلية) على الموضوعات التى لها تدريب ليلى. يمكنك أيضاً إضافة موضوعات جديدة وتحديد إن كانت رئيسية أو عامة." wide>
+          {/* Status banner - only shown when something is wrong */}
+          {!allPctsOk && (
+            <div className={`pct-status-banner ${totalSubjectsSum > 100 ? 'danger' : 'warn'}`}>
+              <div className="pct-status-main">
+                <span className="pct-status-icon">{totalSubjectsSum > 100 ? '⛔' : '⚠️'}</span>
+                <div className="pct-status-text">
+                  <b>
+                    {totalSubjectsSum < 100
+                      ? `مجموع النسب: ${toArabic(String(totalSubjectsSum))}% — متبقى ${toArabic(String(100 - totalSubjectsSum))}% للوصول إلى ١٠٠%`
+                      : `مجموع النسب: ${toArabic(String(totalSubjectsSum))}% — تجاوز الحد الأقصى بزيادة ${toArabic(String(totalSubjectsSum - 100))}%`}
+                  </b>
+                  <small>
+                    {!mainOk && `الرئيسية: ${toArabic(String(mainSubjectsSum))}% من ${toArabic(String(targetMain))}% (${mainSubjectsSum > targetMain ? '+' : ''}${toArabic(String(mainSubjectsSum - targetMain))}%)`}
+                    {!mainOk && !genOk && ' • '}
+                    {!genOk && `العامة: ${toArabic(String(genSubjectsSum))}% من ${toArabic(String(targetGen))}% (${genSubjectsSum > targetGen ? '+' : ''}${toArabic(String(genSubjectsSum - targetGen))}%)`}
+                  </small>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Main Subjects Group */}
           <div className="subj-group">
             <div className="subj-group-head">
               <div className="subj-group-title">
                 <span>الموضوعات الرئيسية</span>
-                <span className="badge" title="مجموع نسب الموضوعات الرئيسية المكتوبة">{toArabic(String(mainSubjectsSum))}%</span>
+                <span
+                  className={mainOk ? 'badge' : 'badge bad'}
+                  title={mainOk ? 'مجموع نسب الموضوعات الرئيسية مطابق' : `مجموع الرئيسية ${mainSubjectsSum}% لا يطابق النسبة المحددة ${targetMain}%`}
+                >
+                  {toArabic(String(mainSubjectsSum))}% {mainOk ? '' : `(المطلوب ${toArabic(String(targetMain))}%)`}
+                </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <label style={{ fontSize: '.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -322,26 +619,55 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
                   </div>
                   <span>%</span>
                 </label>
+                {disabledMain.length > 0 && (
+                  <select
+                    className="restore-select"
+                    defaultValue=""
+                    onChange={e => {
+                      if (e.target.value) {
+                        handleRestoreSubject(e.target.value);
+                        e.target.value = '';
+                      }
+                    }}
+                    title="استعادة أحد الموضوعات الرئيسية التى تم حذفها"
+                  >
+                    <option value="" disabled>↩ استعادة موضوع رئيسى ({toArabic(String(disabledMain.length))})</option>
+                    {disabledMain.map(([k, name]) => (
+                      <option key={k} value={k}>استعادة «{name}»</option>
+                    ))}
+                  </select>
+                )}
                 <button type="button" className="mini" onClick={() => addCustomSubject('main')}>
                   + إضافة موضوع رئيسى
                 </button>
               </div>
             </div>
             <div className="subj-grid">
-              {MAIN_SUBJS.map(([k, l]) => {
+              {visibleMain.map(([k, l]) => {
                 const isNight = currentNightKeys.includes(k);
+                const isMandatory = MANDATORY_KEYS.includes(k);
                 return (
                   <div className="subj-card" key={k}>
                     <div className="subj-head">
-                      <span className="subj-name">{l}</span>
-                      <button
-                        type="button"
-                        className={`night-badge-btn ${isNight ? 'is-night' : ''}`}
-                        onClick={() => toggleNight(k)}
-                        title={isNight ? 'موضوع له تدريب ليلى (اضغط للإلغاء)' : 'موضوع نهارى فقط (اضغط لتفعيل التدريب الليلى)'}
-                      >
-                        {isNight ? '🌙 دراسة ليلية' : '☀️ نهارى'}
-                      </button>
+                      <span className="subj-name" title={l}>{l}</span>
+                      <div className="subj-head-actions">
+                        <button
+                          type="button"
+                          className={`night-badge-btn ${isNight ? 'is-night' : ''}`}
+                          onClick={() => toggleNight(k)}
+                          title={isNight ? 'موضوع له تدريب ليلى (اضغط للإلغاء)' : 'موضوع نهارى فقط (اضغط لتفعيل التدريب الليلى)'}
+                        >
+                          {isNight ? '🌙 دراسة ليلية' : '☀️ نهارى'}
+                        </button>
+                        <button
+                          type="button"
+                          className={`subj-delete-btn ${isMandatory ? 'is-mandatory' : ''}`}
+                          onClick={() => handleDeleteClick(k, l, false, 'main', inst.pcts[k])}
+                          title={isMandatory ? 'موضوع أساسى إلزامى' : `حذف موضوع «${l}»`}
+                        >
+                          ✕
+                        </button>
+                      </div>
                     </div>
                     <div className="subj-input-row">
                       <span className="subj-pct-label">النسبة:</span>
@@ -366,9 +692,9 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
                     />
                     <button
                       type="button"
-                      className="mini danger delete-btn"
-                      onClick={() => removeCustomSubject(s.id)}
-                      title="حذف هذا الموضوع"
+                      className="subj-delete-btn"
+                      onClick={() => handleDeleteClick(s.id, s.name || 'موضوع مخصص', true, 'main', s.pct)}
+                      title={`حذف موضوع «${s.name || 'موضوع مخصص'}»`}
                     >
                       ✕
                     </button>
@@ -408,27 +734,63 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
             <div className="subj-group-head">
               <div className="subj-group-title">
                 <span>الموضوعات العامة</span>
-                <span className="badge" title="مجموع نسب الموضوعات العامة المكتوبة">{toArabic(String(genSubjectsSum))}%</span>
+                <span
+                  className={genOk ? 'badge' : 'badge bad'}
+                  title={genOk ? 'مجموع نسب الموضوعات العامة مطابق' : `مجموع العامة ${genSubjectsSum}% لا يطابق النسبة المحددة ${targetGen}%`}
+                >
+                  {toArabic(String(genSubjectsSum))}% {genOk ? '' : `(المطلوب ${toArabic(String(targetGen))}%)`}
+                </span>
               </div>
-              <button type="button" className="mini" onClick={() => addCustomSubject('general')}>
-                + إضافة موضوع عام
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                {disabledGen.length > 0 && (
+                  <select
+                    className="restore-select"
+                    defaultValue=""
+                    onChange={e => {
+                      if (e.target.value) {
+                        handleRestoreSubject(e.target.value);
+                        e.target.value = '';
+                      }
+                    }}
+                    title="استعادة أحد الموضوعات العامة التى تم حذفها"
+                  >
+                    <option value="" disabled>↩ استعادة موضوع عام ({toArabic(String(disabledGen.length))})</option>
+                    {disabledGen.map(([k, name]) => (
+                      <option key={k} value={k}>استعادة «{name}»</option>
+                    ))}
+                  </select>
+                )}
+                <button type="button" className="mini" onClick={() => addCustomSubject('general')}>
+                  + إضافة موضوع عام
+                </button>
+              </div>
             </div>
             <div className="subj-grid">
-              {GEN_SUBJS.map(([k, l]) => {
+              {visibleGen.map(([k, l]) => {
                 const isNight = currentNightKeys.includes(k);
+                const isMandatory = MANDATORY_KEYS.includes(k);
                 return (
                   <div className="subj-card" key={k}>
                     <div className="subj-head">
-                      <span className="subj-name">{l}</span>
-                      <button
-                        type="button"
-                        className={`night-badge-btn ${isNight ? 'is-night' : ''}`}
-                        onClick={() => toggleNight(k)}
-                        title={isNight ? 'موضوع له تدريب ليلى (اضغط للإلغاء)' : 'موضوع نهارى فقط (اضغط لتفعيل التدريب الليلى)'}
-                      >
-                        {isNight ? '🌙 دراسة ليلية' : '☀️ نهارى'}
-                      </button>
+                      <span className="subj-name" title={l}>{l}</span>
+                      <div className="subj-head-actions">
+                        <button
+                          type="button"
+                          className={`night-badge-btn ${isNight ? 'is-night' : ''}`}
+                          onClick={() => toggleNight(k)}
+                          title={isNight ? 'موضوع له تدريب ليلى (اضغط للإلغاء)' : 'موضوع نهارى فقط (اضغط لتفعيل التدريب الليلى)'}
+                        >
+                          {isNight ? '🌙 دراسة ليلية' : '☀️ نهارى'}
+                        </button>
+                        <button
+                          type="button"
+                          className={`subj-delete-btn ${isMandatory ? 'is-mandatory' : ''}`}
+                          onClick={() => handleDeleteClick(k, l, false, 'general', inst.pcts[k])}
+                          title={isMandatory ? 'موضوع أساسى إلزامى' : `حذف موضوع «${l}»`}
+                        >
+                          ✕
+                        </button>
+                      </div>
                     </div>
                     <div className="subj-input-row">
                       <span className="subj-pct-label">النسبة:</span>
@@ -453,9 +815,9 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
                     />
                     <button
                       type="button"
-                      className="mini danger delete-btn"
-                      onClick={() => removeCustomSubject(s.id)}
-                      title="حذف هذا الموضوع"
+                      className="subj-delete-btn"
+                      onClick={() => handleDeleteClick(s.id, s.name || 'موضوع مخصص', true, 'general', s.pct)}
+                      title={`حذف موضوع «${s.name || 'موضوع مخصص'}»`}
                     >
                       ✕
                     </button>
@@ -502,13 +864,89 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
         </details>
       )}
       <div className="sticky">
-        <button className="btn primary big" disabled={pending.length > 0} onClick={onAccept}>
-          {pending.length ? `أكّد ${pending.length} حقل أولاً` : 'تأكيد التعليمات وحساب الأجندة'}
+        <button
+          className="btn primary big"
+          disabled={!canAccept}
+          onClick={canAccept ? onAccept : undefined}
+          title={!canAccept ? (!allPctsOk ? 'يجب أن يكون مجموع النسب ١٠٠% لتفعيل الحساب' : 'يجب تأكيد الحقول أولاً') : undefined}
+        >
+          {pending.length > 0
+            ? `أكّد ${toArabic(String(pending.length))} حقل أولاً`
+            : !allPctsOk
+              ? totalSubjectsSum !== 100
+                ? `⚠️ لا يمكن الحساب — إجمالى النسب ${toArabic(String(totalSubjectsSum))}% (يجب أن يكون ١٠٠%)`
+                : !mainOk
+                  ? `⚠️ لا يمكن الحساب — نسب الرئيسية ${toArabic(String(mainSubjectsSum))}% لا تطابق ${toArabic(String(targetMain))}%`
+                  : `⚠️ لا يمكن الحساب — نسب العامة ${toArabic(String(genSubjectsSum))}% لا تطابق ${toArabic(String(targetGen))}%`
+              : 'تأكيد التعليمات وحساب الأجندة'}
         </button>
         {pending.length > 0 && (
-          <button type="button" className="btn ghost big" onClick={() => pending.forEach(onConfirmField)}>راجعتُ كل الحقول المظللة وهى صحيحة — أكّد الكل</button>
+          <button type="button" className="btn ghost big" onClick={() => pending.forEach(onConfirmField)}>
+            راجعتُ كل الحقول المظللة وهى صحيحة — أكّد الكل
+          </button>
         )}
       </div>
+
+      {deleteTarget && (
+        <div className="modal-backdrop" onClick={() => setDeleteTarget(null)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="modal-head">
+              <div className="modal-head-title">
+                <span className="modal-icon warn">{deleteTarget.isMandatory ? 'ℹ️' : '⚠️'}</span>
+                <h3>{deleteTarget.isMandatory ? 'موضوع أساسى إلزامى' : 'تحذير قبل حذف الموضوع'}</h3>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setDeleteTarget(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {deleteTarget.isMandatory ? (
+                <div>
+                  <p style={{ fontSize: '1rem', lineHeight: '1.7', margin: '0 0 10px' }}>
+                    لا يمكن حذف موضوع <strong>«{deleteTarget.name}»</strong> لأنه أحد الموضوعات الأساسية للمنظومة
+                    المرتبطة بـ {deleteTarget.key === 'fitness' ? 'ساعات الأجندة اليومية والتربية البدنية الصباحية'
+                      : (deleteTarget.key === 'education' || deleteTarget.key === 'security') ? 'ساعات الأجندة وقيود الفردية والزوجية للموضوعات العامة'
+                      : 'معادلات الموازنة الحسابية لضمان تطابق إجمالى الساعات والنسب'}.
+                  </p>
+                  <p style={{ color: 'var(--muted)', fontSize: '.88rem', margin: 0 }}>
+                    💡 يمكنك تعديل النسبة المئوية للموضوع، لكن لا يمكن حذفه نهائياً من هيكل الدورة.
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <p style={{ fontSize: '1.05rem', lineHeight: '1.6', margin: '0 0 12px' }}>
+                    هل أنت متأكد من رغبتك فى حذف موضوع <strong>«{deleteTarget.name}»</strong>؟
+                  </p>
+                  <ul style={{ margin: '0 0 14px', paddingRight: '20px', lineHeight: '1.8', fontSize: '.9rem', color: 'var(--muted)' }}>
+                    <li>سيتم استبعاد هذا الموضوع تماماً من جدول ربط الساعات وكافة جداول الدورة التدريبية.</li>
+                    <li>سيتم تصفير نسبته الحالية ({toArabic(String(deleteTarget.pct))}%) لتصبح (٠%).</li>
+                    <li>سيتعين عليك موازنة باقى النسب للوصول إلى ١٠٠%.</li>
+                  </ul>
+                  {!deleteTarget.isCustom && (
+                    <div style={{ background: 'rgba(234, 179, 8, 0.1)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: '8px', padding: '8px 12px', fontSize: '.85rem', color: '#fde047' }}>
+                      ↩ ملاحظة: يمكنك دائماً استعادة هذا الموضوع لاحقاً عبر زر «استعادة موضوع محذوف» فى رأس المجموعة.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="modal-actions">
+              {deleteTarget.isMandatory ? (
+                <button type="button" className="btn primary" onClick={() => setDeleteTarget(null)}>
+                  فهمت ذلك
+                </button>
+              ) : (
+                <>
+                  <button type="button" className="btn danger-btn" onClick={handleConfirmDelete}>
+                    🗑️ نعم، احذف الموضوع
+                  </button>
+                  <button type="button" className="btn ghost" onClick={() => setDeleteTarget(null)}>
+                    إلغاء
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </FieldCtx.Provider>
   );

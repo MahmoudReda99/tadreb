@@ -37,12 +37,82 @@ const valid = (y: number, m: number, d: number) => {
   return t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
 };
 
+export type DateCtx = {
+  from?: string;
+  to?: string;
+  yearLabel?: string;
+  startSaturday?: string;
+};
+
+/**
+ * Dedue the calendar year for a day and month based on training year context:
+ * - inst.yearLabel (e.g. "2025 / 2026")
+ * - inst.startSaturday (e.g. "2026-10-03")
+ * - ctx.from / ctx.to
+ */
+export function deduceYear(m: number, d: number, ctx?: DateCtx): number {
+  const labelYears = (toLatin(ctx?.yearLabel ?? '').match(/\b(19\d\d|20\d\d)\b/g) || []).map(Number);
+  const startRef = ctx?.startSaturday || ctx?.from;
+  const startYear = startRef ? +startRef.slice(0, 4) : undefined;
+  const startMonth = startRef ? +startRef.slice(5, 7) : undefined;
+
+  let yStart: number;
+  let yEnd: number;
+
+  if (labelYears.length >= 2) {
+    yStart = Math.min(...labelYears);
+    yEnd = Math.max(...labelYears);
+  } else if (labelYears.length === 1) {
+    const ly = labelYears[0];
+    if (startYear && startYear < ly) {
+      yStart = startYear;
+      yEnd = ly;
+    } else if (startYear && startYear > ly) {
+      yStart = ly;
+      yEnd = startYear;
+    } else {
+      yStart = ly;
+      yEnd = ly + 1;
+    }
+  } else if (startYear) {
+    yStart = startYear;
+    yEnd = startYear + 1;
+  } else {
+    const nowY = new Date().getFullYear();
+    yStart = nowY;
+    yEnd = nowY + 1;
+  }
+
+  // 1. If any candidate year puts the date strictly inside [ctx.from, ctx.to], prioritize it!
+  if (ctx?.from || ctx?.to) {
+    for (const yy of [yStart, yEnd]) {
+      const iso = `${yy}-${pad(m)}-${pad(d)}`;
+      if (valid(yy, m, d) && (!ctx.from || iso >= ctx.from) && (!ctx.to || iso <= ctx.to)) {
+        return yy;
+      }
+    }
+  }
+
+  // 2. Training year semester cutoff:
+  // In the Egyptian Armed Forces calendar, the training year begins in autumn (Sept/Oct).
+  // If startMonth >= 7, months >= startMonth belong to yStart, and months < startMonth belong to yEnd.
+  // If startMonth < 7 (second semester), cutoff is month 9 (Sept), so months >= 9 belong to yStart and months < 9 belong to yEnd.
+  const cutoff = (startMonth && startMonth >= 7) ? startMonth : 9;
+  const chosenYear = (m >= cutoff) ? yStart : yEnd;
+
+  if (valid(chosenYear, m, d)) return chosenYear;
+  const altYear = chosenYear === yStart ? yEnd : yStart;
+  if (valid(altYear, m, d)) return altYear;
+
+  return chosenYear;
+}
+
 /**
  * A date written almost any way: 3-4-2026, 3/4/2026, 2026-04-03, 03.04.26, ٣ ـ ٤ ـ ٢٠٢٦, 3 أبريل 2026 …
  * Year first means year-month-day; otherwise day comes first (month first only when the day part is clearly above 12).
- * With only day and month, the year is the one that puts the date inside `ctx` (the training period).
+ * With only day and month (e.g. 12-7), the year is deduced from yearLabel, startSaturday, and the training period.
  */
-export function parseDate(raw: string, ctx?: { from?: string; to?: string }): string | null {
+export function parseDate(raw: string, ctx?: DateCtx): string | null {
   let t = toLatin(raw);
   for (const [re, n] of MONTHS) t = t.replace(re, ` ${n} `);
   const parts = t.match(/\d+/g);
@@ -57,16 +127,39 @@ export function parseDate(raw: string, ctx?: { from?: string; to?: string }): st
   } else if (parts.length === 2) {
     d = +parts[0]; m = +parts[1];
     if (m > 12 && d <= 12) [d, m] = [m, d];
-    const y0 = ctx?.from ? +ctx.from.slice(0, 4) : new Date().getFullYear();
-    const y1 = ctx?.to ? +ctx.to.slice(0, 4) : y0 + 1;
-    y = y0;
-    for (let yy = y0; yy <= Math.max(y0, y1); yy++) {
-      const iso = `${yy}-${pad(m)}-${pad(d)}`;
-      if (valid(yy, m, d) && (!ctx?.from || iso >= ctx.from) && (!ctx?.to || iso <= ctx.to)) { y = yy; break; }
-    }
+    y = deduceYear(m, d, ctx);
   } else return null;
   if (m > 12 && d <= 12) [d, m] = [m, d]; // 4/13/2026: the second number cannot be a month
   return valid(y, m, d) ? `${y}-${pad(m)}-${pad(d)}` : null;
+}
+
+/**
+ * Parses multiple dates pasted or typed together (comma, newline, semicolon-separated).
+ * Supports ranges like "12-7 إلى 15-7" or "12/7 - 15/7".
+ */
+export function parseBulkHolidays(rawText: string, ctx?: DateCtx): { from: string; to: string | null }[] {
+  const chunks = rawText.split(/[\n\r,،;]+/);
+  const results: { from: string; to: string | null }[] = [];
+
+  for (const chunk of chunks) {
+    const trimmed = chunk.trim();
+    if (!trimmed) continue;
+
+    const rangeMatch = trimmed.match(/^(.+?)\s*(?:إلى|حتى|to|–|—|\s-\s)\s*(.+)$/i);
+    if (rangeMatch) {
+      const f = parseDate(rangeMatch[1], ctx);
+      const t = parseDate(rangeMatch[2], ctx);
+      if (f) {
+        results.push({ from: f, to: t && t >= f ? t : null });
+      }
+    } else {
+      const d = parseDate(trimmed, ctx);
+      if (d) {
+        results.push({ from: d, to: null });
+      }
+    }
+  }
+  return results;
 }
 
 /** 2026-04-03 -> ٣/٤/٢٠٢٦ */

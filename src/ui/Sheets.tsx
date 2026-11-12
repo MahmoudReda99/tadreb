@@ -138,7 +138,9 @@ export function AgendaSheet({ inst, agenda, onInspect = noop }: { inst: Instruct
           <div>إجمالى عدد الساعات : ( <b>{ar(agenda.total)}</b> ) ساعة</div>
           <div>نهارى : ( <b>{ar(agenda.day)}</b> ) ساعـة</div>
           <div>ليـــلى : ( <b className="red">{ar(agenda.night)}</b> ) ساعة</div>
-          <div className={'chk ' + (agenda.checks.ok ? 'ok' : 'bad')}>{agenda.checks.ok ? '✔ مجموع الأسابيع = مجموع الشهور = الإجمالى' : '✘ عدم تطابق بين الأسابيع والشهور'}</div>
+          {!agenda.checks.ok && (
+            <div className="chk bad">✘ عدم تطابق بين الأسابيع والشهور</div>
+          )}
         </div>
       </div>
     </div>
@@ -219,7 +221,9 @@ export function DistributionSheet({ inst, agenda, dist, onInspect = noop }: { in
             <td className="r"><Num v={agenda.night} on={dsum('الإجمالى — ليلى', 'الرئيسية + العامة، وتساوى ساعات الأجندة الليلية', gparts(c => c.night))} /></td><td colSpan={6} /></tr>
         </tbody>
       </table>
-      <div className={'chk ' + (dist.checks.ok ? 'ok' : 'bad')}>{dist.checks.ok ? '✔ مجموع الموضوعات = إجمالى الأجندة (نهارى وليلى)' : '✘ مجموع الموضوعات لا يساوى إجمالى الأجندة'}</div>
+      {!dist.checks.ok && (
+        <div className="chk bad">✘ مجموع الموضوعات لا يساوى إجمالى الأجندة</div>
+      )}
     </div>
   );
 }
@@ -312,15 +316,17 @@ export function LinkingSheet({ inst, agenda, dist, link, onInspect = noop }: { i
               : <td key={m}>{grandCell(M, m, n)}</td>)}</tr>
         </tbody>
       </table>
-      <div className="checks">
-        <span className={'chk ' + (link.checks.rows ? 'ok' : 'bad')}>{link.checks.rows ? '✔ الفحص الأفقى: مجموع كل صف = إجمالى الموضوع' : '✘ الفحص الأفقى'}</span>
-        <span className={'chk ' + (link.checks.cols ? 'ok' : 'bad')}>{link.checks.cols ? '✔ الفحص الرأسى: مجموع كل عمود = إجمالى الشهر / الأسبوع' : '✘ الفحص الرأسى'}</span>
-        {link.checks.parity !== undefined && (
-          <span className={'chk ' + (link.checks.parity ? 'ok' : 'bad')}>
-            {link.checks.parity ? '✔ قيود الفردية والزوجية: متوافقة لكل شهر والإجمالي' : `✘ ${link.checks.conflictMessage || 'تعارض في قيود الفردية والزوجية'}`}
-          </span>
-        )}
-      </div>
+      {(!link.checks.rows || !link.checks.cols || (link.checks.parity !== undefined && !link.checks.parity)) && (
+        <div className="checks">
+          {!link.checks.rows && <span className="chk bad">✘ الفحص الأفقى</span>}
+          {!link.checks.cols && <span className="chk bad">✘ الفحص الرأسى</span>}
+          {link.checks.parity !== undefined && !link.checks.parity && (
+            <span className="chk bad">
+              ✘ {link.checks.conflictMessage || 'تعارض في قيود الفردية والزوجية'}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -453,19 +459,17 @@ export function MonthDetailSheet({ inst, dist, link, onInspect = noop }: { inst:
           </tr>
         </tbody>
       </table>
-      <div className="checks">
-        <span className={'chk ' + (wk.b.rowsOk ? 'ok' : 'bad')}>
-          {wk.b.rowsOk ? '✔ الفحص الأفقى: مجموع أسابيع كل موضوع = ساعات الشهر' : '✘ الفحص الأفقى'}
-        </span>
-        <span className={'chk ' + (wk.b.colsOk ? 'ok' : 'bad')}>
-          {wk.b.colsOk ? '✔ الفحص الرأسى: مجموع كل أسبوع = ساعات الأسبوع فى الأجندة' : '✘ الفحص الرأسى'}
-        </span>
-        {wk.b.parityOk !== undefined && (
-          <span className={'chk ' + (wk.b.parityOk ? 'ok' : 'bad')}>
-            {wk.b.parityOk ? '✔ قيود الفردية والزوجية لأسابيع الشهر: متوافقة' : `✘ ${wk.b.conflictMessage || 'تعارض في قيود الفردية والزوجية'}`}
-          </span>
-        )}
-      </div>
+      {(!wk.b.rowsOk || !wk.b.colsOk || (wk.b.parityOk !== undefined && !wk.b.parityOk)) && (
+        <div className="checks">
+          {!wk.b.rowsOk && <span className="chk bad">✘ الفحص الأفقى</span>}
+          {!wk.b.colsOk && <span className="chk bad">✘ الفحص الرأسى</span>}
+          {wk.b.parityOk !== undefined && !wk.b.parityOk && (
+            <span className="chk bad">
+              ✘ {wk.b.conflictMessage || 'تعارض في قيود الفردية والزوجية'}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -486,7 +490,14 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
     <div className="sheet framed" dir="rtl">
       <div className="mod">
         <span>وزارة الدفـــاع</span>
-        <span style={{ textAlign: 'left' }}>قائد الكتيبة ........................<br />صودق ،،،</span>
+        <div style={{ display: 'inline-grid', gridTemplateColumns: 'max-content max-content max-content', alignItems: 'baseline', justifyItems: 'center', rowGap: '4px', textDecoration: 'none' }}>
+          <span style={{ textAlign: 'right' }}>قائد&nbsp;</span>
+          <span style={{ textAlign: 'center' }}>الكتيبة</span>
+          <span style={{ textAlign: 'left' }}>&nbsp;........................</span>
+          <span />
+          <span style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>صودق ،،،</span>
+          <span />
+        </div>
       </div>
       <div className="sheet-title c">
         <div className="u">مستخرج الموضوعات والساعات عن الاسبوع رقم ( {ar(ex.week)} )</div>
@@ -585,12 +596,22 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
         </tbody>
       </table>
       <div className="notes">
-        <b>ملاحظــات:</b>
-        <div>١- يرفق مع هذا كشف للموضوعات والدروس التى ستدرس فى الكتيبة عن هذا الأسبوع .<span className="sig">التوقيع (&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</span></div>
-        <div>٢- يسلم لقائد السرية يوم الأحد صباحا و يعاد الأحد بعد الظهر .<span className="sig">قائد السرية .............................</span></div>
-        <div>٣- يتصدق عليه من قائد الكتيبة و يعاد لقائد السرية يوم الإثنين لإعداد البرنامج .</div>
+        <div className="notes-content">
+          <b>ملاحظــات:</b>
+          <div>١- يرفق مع هذا كشف للموضوعات والدروس التى ستدرس فى الكتيبة عن هذا الأسبوع .</div>
+          <div>٢- يسلم لقائد السرية يوم الأحد صباحا و يعاد الأحد بعد الظهر .</div>
+          <div>٣- يتصدق عليه من قائد الكتيبة و يعاد لقائد السرية يوم الإثنين لإعداد البرنامج .</div>
+        </div>
+        <div className="notes-sig">
+          <span className="sig-label">التوقيع</span>
+          <span className="sig-paren">(<span>&nbsp;</span>)</span>
+          <span className="sig-label">قائد السرية</span>
+          <span className="sig-dots">...................................</span>
+        </div>
       </div>
-      <div className={'chk ' + (ex.checks.ok ? 'ok' : 'bad')}>{ex.checks.ok ? '✔ ساعات كل يوم = مجموع محاضراته، وساعات كل موضوع = ساعاته الأسبوعية' : '✘ عدم تطابق فى توزيع المحاضرات'}</div>
+      {!ex.checks.ok && (
+        <div className="chk bad">✘ عدم تطابق فى توزيع المحاضرات</div>
+      )}
     </div>
   );
 }

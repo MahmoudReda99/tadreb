@@ -212,8 +212,9 @@ export default function App() {
               <div className="strip">
                 <span>الإجمالى <b>{ar(model.agenda.total)}</b></span><span>نهارى <b>{ar(model.agenda.day)}</b></span><span>ليلى <b className="red">{ar(model.agenda.night)}</b></span>
                 <span>لياقة <b>{ar(model.agenda.fitness)}</b></span><span>تعليم منضم <b>{ar(model.agenda.education)}</b></span><span>أمن حربى <b>{ar(model.agenda.security)}</b></span>
-                <span className={model.agenda.checks.ok && model.dist.checks.ok && model.link.checks.ok ? 'good' : 'bad'}>
-                  {model.agenda.checks.ok && model.dist.checks.ok && model.link.checks.ok ? '✔ كل الفحوص سليمة' : '✘ توجد فحوص غير مطابقة'}</span>
+                {!(model.agenda.checks.ok && model.dist.checks.ok && model.link.checks.ok) && (
+                  <span className="bad">✘ توجد فحوص غير مطابقة</span>
+                )}
                 {(tab === 'link' || tab === 'month') && <span>التفصيل: {monthLabel}</span>}
               </div>
               <p className="hint">اضغط أى رقم لعرض خطوات حسابه.</p>
