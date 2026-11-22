@@ -1,10 +1,13 @@
-import { Fragment } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import type { AgendaResult, DistributionResult, Instructions, LinkingResult, SubjectKey, WeeklyExtract } from '../engine/types';
 import { getAllKeys, getMainKeys, getGeneralKeys, getSubjectName, getSubjectShortName } from '../engine/types';
 import { DAYS_AR, addDays, dm, monthNames, parseDate } from '../engine/dates';
 import { auditDay, auditLink, auditSubject, auditSum, type Audit } from '../engine/audit';
 import { ar, h, KIND_COLORS, LEVEL_BG, LEVEL_SWATCH } from './format';
 import { sum } from '../engine/rounding';
+import { buildWeekProgram } from '../export/programDocx';
+import { computeCourseLessons } from '../engine/lessonScheduler';
+import { LessonPickerModal } from './LessonPickerModal';
 
 export type Inspect = (a: Audit) => void;
 const noop: Inspect = () => {};
@@ -106,11 +109,31 @@ export function AgendaSheet({ inst, agenda, onInspect = noop }: { inst: Instruct
             <tr key={what}>
               <th className="rowh">{what === 'day' ? 'نهاراً' : what === 'night' ? 'ليلاً' : 'الإجمالى'}</th>
               {W.map(w => <td key={w.week} className={what === 'night' ? 'r' : undefined}><Num v={what === 'total' ? w.total : w[what]} on={weekSum(w, what)} /></td>)}
-              <td colSpan={3} className={'gt' + (what === 'night' ? ' r' : '')}>
-                <Num v={0} text={ar(what === 'total' ? agenda.total : agenda[what])} on={() => onInspect(auditSum(
-                  `إجمالى الفترة — ${what === 'day' ? 'نهارى' : what === 'night' ? 'ليلى' : 'الكلى'}`, 'مجموع الأسابيع، ويساوى مجموع الشهور',
-                  W.map(w => ({ label: `أسبوع ${w.week}`, value: what === 'total' ? w.total : w[what] }))))} />
-              </td>
+              {what === 'day' ? (
+                <>
+                  <td className="gt">
+                    <Num v={agenda.day} on={() => onInspect(auditSum('إجمالى الفترة — نهارى', 'مجموع الأسابيع، ويساوى مجموع الشهور', W.map(w => ({ label: `أسبوع ${w.week}`, value: w.day }))))} />
+                  </td>
+                  <td>-</td>
+                  <td>-</td>
+                </>
+              ) : what === 'night' ? (
+                <>
+                  <td>-</td>
+                  <td className="gt r">
+                    <Num v={agenda.night} on={() => onInspect(auditSum('إجمالى الفترة — ليلى', 'مجموع الأسابيع، ويساوى مجموع الشهور', W.map(w => ({ label: `أسبوع ${w.week}`, value: w.night }))))} />
+                  </td>
+                  <td>-</td>
+                </>
+              ) : (
+                <>
+                  <td>-</td>
+                  <td>-</td>
+                  <td className="gt">
+                    <Num v={agenda.total} on={() => onInspect(auditSum('إجمالى الفترة — الكلى', 'مجموع الأسابيع، ويساوى مجموع الشهور', W.map(w => ({ label: `أسبوع ${w.week}`, value: w.total }))))} />
+                  </td>
+                </>
+              )}
             </tr>
           ))}
         </tbody>
@@ -204,9 +227,9 @@ export function DistributionSheet({ inst, agenda, dist, onInspect = noop }: { in
       <Title><div className="u">توزيع الساعات على الموضوعات</div></Title>
       <table className="grid dist">
         <thead>
-          <tr><th rowSpan={2}>م</th><th rowSpan={2}>الموضوع</th><th rowSpan={2}>النسبة المئوية</th><th rowSpan={2}>عدد الساعات</th><th rowSpan={2}>نهارى</th><th rowSpan={2}>ليلى</th>
+          <tr><th rowSpan={2}>م</th><th rowSpan={2}>الموضوع</th><th rowSpan={2}>النسبة المئوية</th><th rowSpan={2}>عدد الساعات</th><th rowSpan={2}>نهارى</th><th rowSpan={2} className="r">ليلى</th>
             <th colSpan={2}>فرد</th><th colSpan={2}>طاقم</th><th colSpan={2}>مركز</th></tr>
-          <tr>{[0, 1, 2].map(i => <><th key={'n' + i}>ن</th><th key={'l' + i}>ل</th></>)}</tr>
+          <tr>{[0, 1, 2].map(i => <Fragment key={i}><th key={'n' + i}>ن</th><th key={'l' + i} className="r">ل</th></Fragment>)}</tr>
         </thead>
         <tbody>
           <tr className="band"><td colSpan={12}>الموضوعات الرئيسية : {ar(mainPctSum || p.mainPct)} %</td></tr>
@@ -218,7 +241,52 @@ export function DistributionSheet({ inst, agenda, dist, onInspect = noop }: { in
           <tr className="sub grand"><td colSpan={2}>الإجمالى</td><td>١٠٠ %</td>
             <td><Num v={dist.total} on={dsum('الإجمالى — عدد الساعات', 'الرئيسية + العامة، وتساوى إجمالى ساعات الأجندة', gparts(c => c.day + c.night))} /></td>
             <td><Num v={agenda.day} on={dsum('الإجمالى — نهارى', 'الرئيسية + العامة، وتساوى ساعات الأجندة النهارية', gparts(c => c.day))} /></td>
-            <td className="r"><Num v={agenda.night} on={dsum('الإجمالى — ليلى', 'الرئيسية + العامة، وتساوى ساعات الأجندة الليلية', gparts(c => c.night))} /></td><td colSpan={6} /></tr>
+            <td className="r"><Num v={agenda.night} on={dsum('الإجمالى — ليلى', 'الرئيسية + العامة، وتساوى ساعات الأجندة الليلية', gparts(c => c.night))} /></td>
+            {(['individual', 'crew', 'centre'] as const).map(l => {
+              const lp = dist.levelPeriods[l];
+              const name = l === 'individual' ? 'فرد' : l === 'crew' ? 'طاقم' : 'مركز';
+              return (
+                <Fragment key={l}>
+                  <td>
+                    <Num
+                      v={lp.day}
+                      on={() =>
+                        onInspect({
+                          title: `إجمالى ساعات مستوى ${name} — نهارى`,
+                          rule: `مجموع الساعات النهارية لأسابيع مستوى ${name} فى الأجندة`,
+                          steps: [
+                            { label: `أسابيع المستوى (${ar(lp.weeks.length)} أسبوع)`, value: lp.weeks.map(ar).join('، ') || '—' },
+                            { label: 'الساعات النهارية', value: String(lp.day) },
+                          ],
+                          equation: `مجموع أسابيع مستوى ${name} نهاراً = ${lp.day}`,
+                          result: String(lp.day),
+                          ok: true,
+                        })
+                      }
+                    />
+                  </td>
+                  <td className="r">
+                    <Num
+                      v={lp.night}
+                      on={() =>
+                        onInspect({
+                          title: `إجمالى ساعات مستوى ${name} — ليلى`,
+                          rule: `مجموع الساعات الليلية لأسابيع مستوى ${name} فى الأجندة`,
+                          steps: [
+                            { label: `أسابيع المستوى (${ar(lp.weeks.length)} أسبوع)`, value: lp.weeks.map(ar).join('، ') || '—' },
+                            { label: 'الساعات الليلية', value: String(lp.night) },
+                          ],
+                          equation: `مجموع أسابيع مستوى ${name} ليلاً = ${lp.night}`,
+                          result: String(lp.night),
+                          ok: true,
+                        })
+                      }
+                    />
+                  </td>
+                </Fragment>
+              );
+            })}
+          </tr>
         </tbody>
       </table>
       {!dist.checks.ok && (
@@ -231,64 +299,62 @@ export function DistributionSheet({ inst, agenda, dist, onInspect = noop }: { in
 /* ───────────────────────────── page 3 ───────────────────────────── */
 export function LinkingSheet({ inst, agenda, dist, link, onInspect = noop }: { inst: Instructions; agenda: AgendaResult; dist: DistributionResult; link: LinkingResult; onInspect?: Inspect }) {
   const names = monthNames(inst.startSaturday, inst.weeksPerMonth.length);
-  const sm = Math.min(inst.selectedMonth, names.length - 1);
-  const wk = link.weeks[sm];
   const grand = { day: agenda.day, night: agenda.night };
   const M = link.months;
   const mainKeys = getMainKeys(inst);
   const genKeys = getGeneralKeys(inst);
-  const allKeys = getAllKeys(inst);
   const pct = (k: SubjectKey) => {
     const custom = inst.customSubjects?.find(s => s.id === k);
     if (custom) return custom.pct;
     return k === 'fitness' ? inst.pcts.fitness : ((inst.pcts as unknown as Record<string, number>)[k] ?? 0);
   };
-  const pair = (b: typeof M, col: number, k: SubjectKey) => {
-    const c = b.cells[col]?.[k] || { day: 0, night: 0 };
+  const lsum = (title: string, rule: string, parts: { label: string; value: number }[]) => () => onInspect(auditSum(title, rule, parts));
+
+  const pair = (col: number, k: SubjectKey) => {
+    const c = M.cells[col]?.[k] || { day: 0, night: 0 };
     return (
       <Pair d={c.day} n={c.night}
-        onD={() => onInspect(auditLink(b, grand, rowsOf(b, dist), col, k, 'day'))}
-        onN={() => onInspect(auditLink(b, grand, rowsOf(b, dist), col, k, 'night'))} />
+        onD={() => onInspect(auditLink(M, grand, dist.cells, col, k, 'day'))}
+        onN={() => onInspect(auditLink(M, grand, dist.cells, col, k, 'night'))} />
     );
   };
-  const rowsOf = (b: typeof M, d: DistributionResult) => (b === M ? d.cells : Object.fromEntries(allKeys.map(k => [k, M.cells[sm][k]])) as typeof d.cells);
+
   const body = (k: SubjectKey, i: number) => (
     <tr key={k}>
       <td>{ar(i + 1)}</td><td className="subj">{getSubjectShortName(k, inst)}</td><td>{ar(pct(k))}%</td>
       <td className="pair"><Pair d={dist.cells[k]?.day || 0} n={dist.cells[k]?.night || 0}
         onD={lsum(`${getSubjectName(k, inst)} — إجمالى النهارى`, 'مجموع الشهور', names.map((n, m) => ({ label: n, value: M.cells[m][k]?.day || 0 })))}
         onN={lsum(`${getSubjectName(k, inst)} — إجمالى الليلى`, 'مجموع الشهور', names.map((n, m) => ({ label: n, value: M.cells[m][k]?.night || 0 })))} /></td>
-      {names.map((_, m) => m === sm
-        ? <><td key={m} className="mh2">{pair(M, m, k)}</td>{wk.b.cells.map((_c, c) => <td key={m + 'w' + c}>{pair(wk.b, c, k)}</td>)}</>
-        : <td key={m}>{pair(M, m, k)}</td>)}
+      {names.map((_, m) => <td key={m}>{pair(m, k)}</td>)}
     </tr>
   );
-  const lsum = (title: string, rule: string, parts: { label: string; value: number }[]) => () => onInspect(auditSum(title, rule, parts));
+
   const subtotal = (label: string, side: 'main' | 'general', pc: number, c: { day: number; night: number }) => {
     const keys = side === 'main' ? mainKeys : genKeys;
-    // one subtotal cell: day and night each explain themselves from the subjects of the group in that column
-    const cellOf = (b: typeof M, col: number, name: string, x: { day: number; night: number }) => (
+    const cellOf = (col: number, name: string, x: { day: number; night: number }) => (
       <Pair d={x.day} n={x.night}
-        onD={lsum(`${label} — ${name} — نهارى`, 'مجموع الساعات النهارية لموضوعات المجموعة فى هذا العمود', keys.map(k => ({ label: getSubjectName(k, inst), value: b.cells[col]?.[k]?.day || 0 })))}
-        onN={lsum(`${label} — ${name} — ليلى`, 'مجموع الساعات الليلية لموضوعات المجموعة فى هذا العمود', keys.map(k => ({ label: getSubjectName(k, inst), value: b.cells[col]?.[k]?.night || 0 })))} />
+        onD={lsum(`${label} — ${name} — نهارى`, 'مجموع الساعات النهارية لموضوعات المجموعة فى هذا العمود', keys.map(k => ({ label: getSubjectName(k, inst), value: M.cells[col]?.[k]?.day || 0 })))}
+        onN={lsum(`${label} — ${name} — ليلى`, 'مجموع الساعات الليلية لموضوعات المجموعة فى هذا العمود', keys.map(k => ({ label: getSubjectName(k, inst), value: M.cells[col]?.[k]?.night || 0 })))} />
     );
     return (
       <tr className="sub"><td colSpan={2}>{label}</td><td>{ar(pc)}%</td>
         <td className="pair"><Pair d={c.day} n={c.night}
           onD={lsum(`${label} — إجمالى النهارى`, 'مجموع الشهور', names.map((n, m) => ({ label: n, value: M[side][m].day })))}
           onN={lsum(`${label} — إجمالى الليلى`, 'مجموع الشهور', names.map((n, m) => ({ label: n, value: M[side][m].night })))} /></td>
-        {names.map((n, m) => m === sm
-          ? <><td key={m}>{cellOf(M, m, n, M[side][m])}</td>{wk.b[side].map((x, c) => <td key={'w' + c}>{cellOf(wk.b, c, `أسبوع ${wk.weekNumbers[c]}`, x)}</td>)}</>
-          : <td key={m}>{cellOf(M, m, n, M[side][m])}</td>)}</tr>
+        {names.map((n, m) => <td key={m}>{cellOf(m, n, M[side][m])}</td>)}
+      </tr>
     );
   };
-  const grandCell = (b: typeof M, col: number, name: string) => (
-    <Pair d={b.cols[col].day} n={b.cols[col].night}
-      onD={lsum(`الإجمالى — ${name} — نهارى`, 'الرئيسية + العامة، وتساوى ساعات هذا العمود فى الأجندة', [{ label: 'الموضوعات الرئيسية', value: b.main[col].day }, { label: 'الموضوعات العامة', value: b.general[col].day }])}
-      onN={lsum(`الإجمالى — ${name} — ليلى`, 'الرئيسية + العامة، وتساوى ساعات هذا العمود فى الأجندة', [{ label: 'الموضوعات الرئيسية', value: b.main[col].night }, { label: 'الموضوعات العامة', value: b.general[col].night }])} />
+
+  const grandCell = (col: number, name: string) => (
+    <Pair d={M.cols[col].day} n={M.cols[col].night}
+      onD={lsum(`الإجمالى — ${name} — نهارى`, 'الرئيسية + العامة، وتساوى ساعات هذا العمود فى الأجندة', [{ label: 'الموضوعات الرئيسية', value: M.main[col].day }, { label: 'الموضوعات العامة', value: M.general[col].day }])}
+      onN={lsum(`الإجمالى — ${name} — ليلى`, 'الرئيسية + العامة، وتساوى ساعات هذا العمود فى الأجندة', [{ label: 'الموضوعات الرئيسية', value: M.main[col].night }, { label: 'الموضوعات العامة', value: M.general[col].night }])} />
   );
+
   const mainPctSum = mainKeys.reduce((acc, k) => acc + pct(k), 0);
   const genPctSum = genKeys.reduce((acc, k) => acc + pct(k), 0);
+
   return (
     <div className="sheet" dir="rtl">
       <Title>
@@ -297,23 +363,26 @@ export function LinkingSheet({ inst, agenda, dist, link, onInspect = noop }: { i
       </Title>
       <table className="grid link">
         <thead>
-          <tr><th rowSpan={2}>م</th><th rowSpan={2}>الموضوع</th><th rowSpan={2}>النسبة المئوية</th><th rowSpan={2}>إجمالى الساعات</th>
-            {names.map((n, m) => <th key={m} colSpan={m === sm ? 1 + wk.weekNumbers.length : 1} rowSpan={m === sm ? 1 : 2}>{n}</th>)}</tr>
-          <tr><th>الشهر</th>{wk.weekNumbers.map(w => <th key={w}>{ar(w)}</th>)}</tr>
+          <tr>
+            <th>م</th>
+            <th>الموضوع</th>
+            <th>النسبة المئوية</th>
+            <th>إجمالى الساعات</th>
+            {names.map((n, m) => <th key={m}>{n}</th>)}
+          </tr>
         </thead>
         <tbody>
-          <tr className="band"><td colSpan={4 + names.length + wk.weekNumbers.length}>الموضوعات الرئيسية : {ar(mainPctSum || inst.pcts.mainPct)} %</td></tr>
+          <tr className="band"><td colSpan={4 + names.length}>الموضوعات الرئيسية : {ar(mainPctSum || inst.pcts.mainPct)} %</td></tr>
           {mainKeys.map(body)}
           {subtotal('إجمالى الموضوعات الرئيسية', 'main', mainPctSum || inst.pcts.mainPct, dist.mainCell)}
-          <tr className="band"><td colSpan={4 + names.length + wk.weekNumbers.length}>الموضوعات العامة : {ar(genPctSum || (100 - inst.pcts.mainPct))} %</td></tr>
+          <tr className="band"><td colSpan={4 + names.length}>الموضوعات العامة : {ar(genPctSum || (100 - inst.pcts.mainPct))} %</td></tr>
           {genKeys.map(body)}
           {subtotal('إجمالى الموضوعات العامة', 'general', genPctSum || (100 - inst.pcts.mainPct), dist.generalCell)}
           <tr className="sub grand"><td colSpan={2}>الإجمالى</td><td>١٠٠%</td><td><Pair d={agenda.day} n={agenda.night}
             onD={lsum('الإجمالى العام — نهارى', 'مجموع الشهور', names.map((n, m) => ({ label: n, value: M.cols[m].day })))}
             onN={lsum('الإجمالى العام — ليلى', 'مجموع الشهور', names.map((n, m) => ({ label: n, value: M.cols[m].night })))} /></td>
-            {names.map((n, m) => m === sm
-              ? <><td key={m}>{grandCell(M, m, n)}</td>{wk.b.cols.map((_c, i) => <td key={'w' + i}>{grandCell(wk.b, i, `أسبوع ${wk.weekNumbers[i]}`)}</td>)}</>
-              : <td key={m}>{grandCell(M, m, n)}</td>)}</tr>
+            {names.map((n, m) => <td key={m}>{grandCell(m, n)}</td>)}
+          </tr>
         </tbody>
       </table>
       {(!link.checks.rows || !link.checks.cols || (link.checks.parity !== undefined && !link.checks.parity)) && (
@@ -481,8 +550,14 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
   const rows = ex.rows.filter(r => r.day + r.night > 0);
   const cellHrs = (r: typeof rows[number], i: number) =>
     [...r.slots[i]].sort((a, b) => parseInt(a.lectures, 10) - parseInt(b.lectures, 10));
-  const isNight = (lectures: string) => parseInt(lectures, 10) >= 8;
-  const hrs = (r: typeof rows[number], i: number, night: boolean) => sum(r.slots[i].filter(x => isNight(x.lectures) === night).map(x => x.hours));
+  const isNight = (s: { lectures: string; isNight?: boolean } | string, di?: number) => {
+    if (typeof s === 'object' && s.isNight !== undefined) return s.isNight;
+    const lec = typeof s === 'string' ? s : s.lectures;
+    const first = parseInt(lec, 10);
+    const dayThreshold = (di !== undefined && ex.days[di]) ? ex.days[di].day : 7;
+    return first > dayThreshold;
+  };
+  const hrs = (r: typeof rows[number], i: number, night: boolean) => sum(r.slots[i].filter(x => isNight(x, i) === night).map(x => x.hours));
   const wsum = (title: string, rule: string, parts: { label: string; value: number }[]) => () => onInspect(auditSum(title, rule, parts));
   const hasNightDays = ex.days.some(d => d.night > 0);
 
@@ -537,8 +612,8 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
                 onN={wsum(`${getSubjectName(r.key, inst)} — ساعات الأسبوع الليلية`, 'مجموع محاضرات هذا الموضوع الليلية فى أيام الأسبوع', dn.map((d, di) => ({ label: d, value: hrs(r, di, true) })))} /></td>
               {ex.days.map((d, di) => {
                 if (d.night > 0) {
-                  const daySlots = cellHrs(r, di).filter(s => !isNight(s.lectures));
-                  const nightSlots = cellHrs(r, di).filter(s => isNight(s.lectures));
+                  const daySlots = cellHrs(r, di).filter(s => !isNight(s, di));
+                  const nightSlots = cellHrs(r, di).filter(s => isNight(s, di));
                   return (
                     <Fragment key={di}>
                       <td className={daySlots.length ? 'slot' : ''}>
@@ -567,7 +642,7 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
                 return (
                   <td key={di} className={cellHrs(r, di).length ? 'slot' : ''}>
                     {cellHrs(r, di).length ? cellHrs(r, di).map((s, j) => (
-                      <div key={j} className={'tap' + (isNight(s.lectures) ? ' r' : '')} onClick={() => onInspect({
+                      <div key={j} className={'tap' + (isNight(s, di) ? ' r' : '')} onClick={() => onInspect({
                         title: `${getSubjectName(r.key, inst)} — ${dn[di]}`, rule: 'ترتيب محاضرات اليوم: المحاضرة 1 للياقة (والتعليم المنضم يوم الخميس)، وباقى النهار أزواج (2-3 ثم 4-5 ثم 6-7)، والليل (8-9 ثم 10-11).',
                         steps: [{ label: 'الساعات', value: String(s.hours) }, { label: 'المحاضرات', value: s.lectures }, { label: 'ساعات الموضوع بالأسبوع', value: `${r.day} نهارى + ${r.night} ليلى` }],
                         equation: `${s.hours} / ${s.lectures}`, result: String(s.hours), ok: ex.checks.ok,
@@ -611,6 +686,218 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
       </div>
       {!ex.checks.ok && (
         <div className="chk bad">✘ عدم تطابق فى توزيع المحاضرات</div>
+      )}
+    </div>
+  );
+}
+
+/* ───────────────────────────── page 6 ───────────────────────────── */
+export function TrainingProgramSheet({
+  inst,
+  ex,
+  agenda,
+  link,
+  onUpdateInst,
+  isExport = false,
+}: {
+  inst: Instructions;
+  ex: WeeklyExtract | null;
+  agenda?: AgendaResult;
+  link?: LinkingResult;
+  onInspect?: Inspect;
+  onUpdateInst?: (next: Instructions) => void;
+  isExport?: boolean;
+}) {
+  const [pickerTarget, setPickerTarget] = useState<{ dayIdx: number; dayName: string; overrideKey: string } | null>(null);
+
+  const schedule = useMemo(
+    () => (ex && agenda && link ? computeCourseLessons(inst, agenda, link, ex.week) : null),
+    [inst, agenda, link, ex],
+  );
+
+  if (!ex) return <div className="sheet" dir="rtl"><p>لا توجد بيانات لهذا الأسبوع</p></div>;
+
+  const days = buildWeekProgram(inst, ex, schedule);
+  const fromFormatted = ex.from.split('-').reverse().join('/');
+  const toFormatted = ex.to.split('-').reverse().join('/');
+  const interactive = !isExport && !!onUpdateInst;
+
+  const activeSlot = pickerTarget
+    ? days[pickerTarget.dayIdx]?.slots.find(s => s.overrideKey === pickerTarget.overrideKey) ?? null
+    : null;
+
+  const handleSelectLesson = (lessonId: string) => {
+    if (!onUpdateInst || !pickerTarget) return;
+    const nextOverrides = { ...(inst.lessonOverrides || {}), [pickerTarget.overrideKey]: { lessonId } };
+    onUpdateInst({ ...inst, lessonOverrides: nextOverrides });
+    setPickerTarget(null);
+  };
+
+  const handleResetOverride = (overrideKey: string) => {
+    if (!onUpdateInst || !inst.lessonOverrides) return;
+    const nextOverrides = { ...inst.lessonOverrides };
+    delete nextOverrides[overrideKey];
+    onUpdateInst({ ...inst, lessonOverrides: Object.keys(nextOverrides).length ? nextOverrides : undefined });
+  };
+
+  return (
+    <div className="sheet framed program-sheet" dir="rtl">
+      <div className="mod">
+        <div>
+          <div style={{ fontWeight: 800, textDecoration: 'underline', marginBottom: '8px' }}>وزارة الدفـــاع</div>
+          <div>الكتيبة / .........................</div>
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontWeight: 800, textDecoration: 'underline' }}>سرى جداً</div>
+          <div style={{ fontWeight: 700 }}>- ١٥٥ -</div>
+        </div>
+        <div style={{ textAlign: 'left', fontSize: '11px', fontWeight: 600 }}>
+          نموذج رقم ٥٤٦ ((هـ . تد رماية))
+        </div>
+      </div>
+
+      <div className="sheet-title c" style={{ margin: '8px 0 16px' }}>
+        <div className="u" style={{ fontSize: '16px', fontWeight: 900 }}>برنامج تدريب السرية</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', maxWidth: '380px', margin: '6px auto 4px', fontWeight: 700, fontSize: '13px' }}>
+          <div>صودق</div>
+          <div style={{ direction: 'rtl' }}>قائد الكتيبة : ------------------------</div>
+        </div>
+        <div style={{ marginTop: '6px', fontWeight: 700, fontSize: '13px' }}>
+          عن الأسبوع رقم ( {ar(ex.week)} )
+          {inst.prepWeeks.includes(ex.week) && ' — أسبوع الفترة التحضيرية'}
+          {inst.opsWeeks.includes(ex.week) && ' — أسبوع تدريب مهام العمليات'}
+          {inst.reserveWeeks.includes(ex.week) && ' — أسبوع احتياط'}
+          {' من : '}{ar(fromFormatted)}{' إلي : '}{ar(toFormatted)}
+        </div>
+      </div>
+
+      <table className="grid program">
+        <thead>
+          <tr>
+            <th rowSpan={2} style={{ width: '70px' }}>التاريخ</th>
+            <th rowSpan={2} style={{ width: '90px' }}>التوقيت</th>
+            <th rowSpan={2} style={{ width: '65px' }}>الطابور</th>
+            <th colSpan={4} style={{ width: '100px' }}>الفصائل</th>
+            <th rowSpan={2}>الموضوعات والدروس ومشتملاتها</th>
+            <th rowSpan={2} style={{ width: '105px' }}>المكان</th>
+            <th rowSpan={2} style={{ width: '115px' }}>مساعدات التدريب</th>
+            <th rowSpan={2} style={{ width: '115px' }}>المعلم المشرف</th>
+          </tr>
+          <tr>
+            <th style={{ width: '25px' }}>١</th>
+            <th style={{ width: '25px' }}>٢</th>
+            <th style={{ width: '25px' }}>٣</th>
+            <th style={{ width: '25px' }}>٤</th>
+          </tr>
+        </thead>
+        <tbody>
+          {days.map((d, di) => {
+            if (d.isRest) {
+              const isMaint = d.restLabel === 'يوم صيانة';
+              return (
+                <tr key={di} className={`rest-row day-last-row ${isMaint ? 'merged-day-row' : ''}`.trim()}>
+                  <td className="day-name">
+                    <div>{d.dayName}</div>
+                    {d.dateStr && <small style={{ display: 'block', fontSize: '10px', color: '#555', marginTop: '2px' }}>{ar(d.dateStr)}</small>}
+                  </td>
+                  <td colSpan={10} className={isMaint ? 'merged-day-cell' : 'rest-cell'}>{d.restLabel || 'راحـــــــــــــــــــــــــة'}</td>
+                </tr>
+              );
+            }
+            return d.slots.map((s, si) => {
+              const isLastSlot = si === d.slots.length - 1;
+              const lastClass = isLastSlot ? 'day-last-row' : '';
+
+              if (s.isMerged) {
+                return (
+                  <tr key={`${di}-${si}`} className={`rest-row merged-day-row ${lastClass}`.trim()}>
+                    {si === 0 ? (
+                      <td rowSpan={d.slots.length} className="day-name">
+                        <div>{d.dayName}</div>
+                        <small style={{ display: 'block', fontSize: '10px', color: '#555', marginTop: '2px' }}>{ar(d.dateStr)}</small>
+                      </td>
+                    ) : null}
+                    <td colSpan={10} className="rest-cell merged-day-cell">{s.mergedLabel || s.subject}</td>
+                  </tr>
+                );
+              }
+              const rowClass = [s.isNight ? 'night-row' : '', lastClass].filter(Boolean).join(' ');
+              const hasLesson = !!(s.hasCurriculum && s.lessonText);
+              const canPick = interactive && s.hasCurriculum && !!s.overrideKey;
+              return (
+                <tr key={`${di}-${si}`} className={rowClass || undefined}>
+                  {si === 0 ? (
+                    <td rowSpan={d.slots.length} className="day-name">
+                      <div>{d.dayName}</div>
+                      <small style={{ display: 'block', fontSize: '10px', color: '#555', marginTop: '2px' }}>{ar(d.dateStr)}</small>
+                    </td>
+                  ) : null}
+                  <td className={s.isNight ? 'r timing' : 'timing'}>{ar(s.timing)}</td>
+                  <td className={s.isNight ? 'r tabour' : 'tabour'}>{ar(s.tabour)}</td>
+                  <td className={s.isNight ? 'r' : ''}>✔</td>
+                  <td className={s.isNight ? 'r' : ''}>✔</td>
+                  <td className={s.isNight ? 'r' : ''}>✔</td>
+                  <td className={s.isNight ? 'r' : ''}>✔</td>
+                  <td className={s.isNight ? 'r subj-cell' : 'subj-cell'}>
+                    {hasLesson ? (
+                      <div className="subj-with-lesson">
+                        <span className="subj-topic">{s.subject}</span>
+                        <span className="subj-hbar" aria-hidden="true" />
+                        <span
+                          className={`subj-lesson ${canPick ? 'is-clickable' : ''}`}
+                          onClick={canPick ? () => setPickerTarget({ dayIdx: di, dayName: d.dayName, overrideKey: s.overrideKey! }) : undefined}
+                          role={canPick ? 'button' : undefined}
+                          tabIndex={canPick ? 0 : undefined}
+                          onKeyDown={canPick ? e => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setPickerTarget({ dayIdx: di, dayName: d.dayName, overrideKey: s.overrideKey! });
+                            }
+                          } : undefined}
+                          title={canPick ? 'اضغط لعرض واختيار درس من المنهج' : undefined}
+                        >
+                          {ar(s.lessonText!)}
+                        </span>
+                      </div>
+                    ) : (
+                      s.subject
+                    )}
+                  </td>
+                  <td className={s.isNight ? 'r' : ''}>{s.location}</td>
+                  <td className={s.isNight ? 'r' : ''}>{s.aids}</td>
+                  <td className={s.isNight ? 'r' : ''}>{s.instructor}</td>
+                </tr>
+              );
+            });
+          })}
+        </tbody>
+      </table>
+
+      <div className="notes" style={{ marginTop: '12px' }}>
+        <div className="notes-content" style={{ visibility: 'hidden' }}>
+          <div>&nbsp;</div>
+        </div>
+        <div className="notes-sig" style={{ alignSelf: 'flex-start' }}>
+          <span className="sig-label">التوقيع</span>
+          <span className="sig-paren">(<span>&nbsp;</span>)</span>
+          <span className="sig-label">قائد السرية</span>
+          <span className="sig-dots">...................................</span>
+        </div>
+      </div>
+
+      {interactive && pickerTarget && activeSlot && (
+        <LessonPickerModal
+          week={ex.week}
+          dayName={pickerTarget.dayName}
+          slot={activeSlot}
+          schedule={schedule}
+          onSelect={handleSelectLesson}
+          onResetDefault={() => {
+            handleResetOverride(pickerTarget.overrideKey);
+            setPickerTarget(null);
+          }}
+          onClose={() => setPickerTarget(null)}
+        />
       )}
     </div>
   );

@@ -1,9 +1,9 @@
 import type { AgendaResult, DistributionResult, Instructions, LinkingResult, WeeklyExtract } from '../engine/types';
-import { AgendaSheet, DistributionSheet, LinkingSheet, MonthDetailSheet, WeeklySheet } from './Sheets';
+import { AgendaSheet, DistributionSheet, LinkingSheet, MonthDetailSheet, WeeklySheet, TrainingProgramSheet } from './Sheets';
 
 export interface Model { inst: Instructions; agenda: AgendaResult; dist: DistributionResult; link: LinkingResult; ex: WeeklyExtract | null }
 
-/** the five official pages, A4 landscape, white background, black borders — one page each */
+/** the official pages, A4 landscape, white background, black borders — one page each */
 export function ExportPages({ m }: { m: Model }) {
   return (
     <>
@@ -12,6 +12,7 @@ export function ExportPages({ m }: { m: Model }) {
       <div className="paper"><LinkingSheet inst={m.inst} agenda={m.agenda} dist={m.dist} link={m.link} /></div>
       <div className="paper"><MonthDetailSheet inst={m.inst} agenda={m.agenda} dist={m.dist} link={m.link} /></div>
       <div className="paper"><WeeklySheet inst={m.inst} ex={m.ex} /></div>
+      <div className="paper"><TrainingProgramSheet inst={m.inst} ex={m.ex} agenda={m.agenda} link={m.link} isExport /></div>
     </>
   );
 }

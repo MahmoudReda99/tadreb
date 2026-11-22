@@ -34,6 +34,13 @@ export interface Instructions {
   nightKeys?: string[];
   customSubjects?: CustomSubject[];
   disabledSubjects?: string[];
+  /** Manual lesson selections for Page 6 keyed by `${week}:${dayIdx}:${slotIdx}` */
+  lessonOverrides?: Record<string, LessonOverride>;
+}
+
+export interface LessonOverride {
+  lessonId: string;
+  secondaryLessonId?: string;
 }
 
 export interface CustomSubject {
@@ -165,7 +172,7 @@ export interface LinkingResult {
   checks: { rows: boolean; cols: boolean; parity?: boolean; conflictMessage?: string; ok: boolean };
 }
 
-export interface SlotEntry { hours: number; lectures: string; text: string }
+export interface SlotEntry { hours: number; lectures: string; text: string; isNight?: boolean }
 export interface WeeklyDay { date: DateStr; dow: number; day: number; night: number; kind: DayKind }
 export interface WeeklyExtract {
   week: number; from: DateStr; to: DateStr; days: WeeklyDay[];

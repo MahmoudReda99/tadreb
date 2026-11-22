@@ -13,19 +13,21 @@ import { importJson, listProjects, removeProject, saveProject, type Project } fr
 import { exportPdf } from './export/pdf';
 import { Review } from './ui/Review';
 import { Inspector } from './ui/Inspector';
-import { AgendaSheet, DistributionSheet, LinkingSheet, MonthDetailSheet, WeeklySheet } from './ui/Sheets';
+import { AgendaSheet, DistributionSheet, LinkingSheet, MonthDetailSheet, WeeklySheet, TrainingProgramSheet } from './ui/Sheets';
 import { ExportPages, type Model } from './ui/ExportPages';
+import { downloadProgramDocx } from './export/programDocx';
 import type { Audit } from './engine/audit';
 import { ar } from './ui/format';
 
 type View = 'upload' | 'review' | 'results';
-type Tab = 'agenda' | 'dist' | 'link' | 'month' | 'week';
+type Tab = 'agenda' | 'dist' | 'link' | 'month' | 'week' | 'program';
 const TABS: [Tab, string][] = [
   ['agenda', 'الأجندة'],
   ['dist', 'التوزيع'],
   ['link', 'جدول الربط'],
   ['month', 'تفصيل الشهر'],
   ['week', 'المستخرج الأسبوعى'],
+  ['program', 'برنامج التدريب الأسبوعى'],
 ];
 
 /** scales the 1123px paper to the screen width (never below 0.6, then it scrolls) */
@@ -109,6 +111,10 @@ export default function App() {
   async function accept() {
     await saveProject({ id: pid, name: inst.courseName || 'مشروع بدون اسم', instructions: inst, updatedAt: Date.now() }).catch(() => {});
     refresh(); setView('results'); setTab('agenda');
+  }
+  function updateInstResults(next: Instructions) {
+    setInst(next);
+    saveProject({ id: pid, name: next.courseName || 'مشروع بدون اسم', instructions: next, updatedAt: Date.now() }).catch(() => {});
   }
   async function doExport() {
     if (!model) return;
@@ -197,13 +203,16 @@ export default function App() {
             <button className="btn primary" onClick={doExport} disabled={exporting || !model}>{exporting ? 'جارى التصدير…' : 'تصدير PDF'}</button>
             <button className="btn" onClick={() => window.print()}>طباعة</button>
             <button className="btn ghost" onClick={() => setView('review')}>تعديل التعليمات</button>
-            {(tab === 'link' || tab === 'month') && (
+            {tab === 'month' && (
               <label className="sel">شهر التفصيل <select value={inst.selectedMonth} onChange={e => setInst({ ...inst, selectedMonth: +e.target.value })}>
                 {monthNames(inst.startSaturday, inst.weeksPerMonth.length).map((n, i) => <option key={i} value={i}>{n}</option>)}</select></label>
             )}
-            {tab === 'week' && (
+            {(tab === 'week' || tab === 'program') && (
               <label className="sel">الأسبوع <select value={inst.selectedWeek} onChange={e => setInst({ ...inst, selectedWeek: +e.target.value })}>
                 {Array.from({ length: inst.totalWeeks }, (_, i) => i + inst.firstWeek).map(w => <option key={w} value={w}>{ar(w)}</option>)}</select></label>
+            )}
+            {tab === 'program' && model?.ex && (
+              <button className="btn" onClick={() => downloadProgramDocx(inst, model.ex!, model.agenda, model.link)}>تحميل Word (.docx)</button>
             )}
           </div>
           {error && <div className="err" role="alert">{error}</div>}
@@ -215,14 +224,26 @@ export default function App() {
                 {!(model.agenda.checks.ok && model.dist.checks.ok && model.link.checks.ok) && (
                   <span className="bad">✘ توجد فحوص غير مطابقة</span>
                 )}
-                {(tab === 'link' || tab === 'month') && <span>التفصيل: {monthLabel}</span>}
+                {tab === 'month' && <span>التفصيل: {monthLabel}</span>}
               </div>
-              <p className="hint">اضغط أى رقم لعرض خطوات حسابه.</p>
+              <p className="hint">{tab === 'program' ? 'اضغط على اسم الدرس بجانب أى موضوع لاختيار درس آخر من المنهج.' : 'اضغط أى رقم لعرض خطوات حسابه.'}</p>
               {tab === 'agenda' && <Paper><AgendaSheet inst={inst} agenda={model.agenda} onInspect={setAudit} /></Paper>}
               {tab === 'dist' && <Paper><DistributionSheet inst={inst} agenda={model.agenda} dist={model.dist} onInspect={setAudit} /></Paper>}
               {tab === 'link' && <Paper><LinkingSheet inst={inst} agenda={model.agenda} dist={model.dist} link={model.link} onInspect={setAudit} /></Paper>}
               {tab === 'month' && <Paper><MonthDetailSheet inst={inst} agenda={model.agenda} dist={model.dist} link={model.link} onInspect={setAudit} /></Paper>}
               {tab === 'week' && <Paper><WeeklySheet inst={inst} ex={model.ex} onInspect={setAudit} /></Paper>}
+              {tab === 'program' && (
+                <Paper>
+                  <TrainingProgramSheet
+                    inst={inst}
+                    ex={model.ex}
+                    agenda={model.agenda}
+                    link={model.link}
+                    onInspect={setAudit}
+                    onUpdateInst={updateInstResults}
+                  />
+                </Paper>
+              )}
               <div className="print-root"><ExportPages m={model} /></div>
             </>
           )}

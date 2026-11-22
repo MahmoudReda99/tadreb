@@ -31,9 +31,9 @@ export function calculateWeekly(agenda: AgendaResult, linking: LinkingResult, we
   const slots: Record<SubjectKey, SlotEntry[][]> = Object.fromEntries(
     allKeys.map(k => [k, days.map(() => [] as SlotEntry[])]),
   ) as never;
-  const push = (k: SubjectKey, di: number, first: number, len: number) => {
+  const push = (k: SubjectKey, di: number, first: number, len: number, isNight: boolean = false) => {
     const lectures = `${first}-${first + len - 1}`;
-    slots[k][di].push({ hours: len, lectures, text: `${len} / ${lectures}` });
+    slots[k][di].push({ hours: len, lectures, text: `${len} / ${lectures}`, isNight });
   };
 
   // ── Step 1: reserved lectures (fitness → education → security) at the top of each day ──
@@ -52,8 +52,9 @@ export function calculateWeekly(agenda: AgendaResult, linking: LinkingResult, we
   );
   const nightBlocksByDay: Block[][] = days.map((d, di) => {
     const bs: Block[] = [];
+    const nightStart = d.day > 0 ? d.day + 1 : 8;
     for (let i = 0; i < d.night; i += 2)
-      bs.push({ day: di, first: 8 + i, len: Math.min(2, d.night - i) });
+      bs.push({ day: di, first: nightStart + i, len: Math.min(2, d.night - i) });
     return bs;
   });
 
@@ -115,25 +116,25 @@ export function calculateWeekly(agenda: AgendaResult, linking: LinkingResult, we
   // ── Step 4: number lecture slots in top-to-bottom row order for each day ──
   // Daytime lectures: start at reservedDay[di] + 1 (e.g. 2), advance down rows (2-3, 4-5, 6-7)
   // Nighttime lectures: start at 8, advance down rows (8-9, 10-11)
-  days.forEach((_d, di) => {
+  days.forEach((d, di) => {
     let curDay = reservedDay[di] + 1;
     for (const k of orderedKeys) {
       let h = dayAlloc[k][di];
       while (h > 0) {
         // If a subject has 4 consecutive hours covering lectures 4 to 7, merge into a single "4 / 4-7"
         const chunk = (curDay === 4 && h === 4) ? 4 : Math.min(2, h);
-        push(k, di, curDay, chunk);
+        push(k, di, curDay, chunk, false);
         curDay += chunk;
         h -= chunk;
       }
     }
 
-    let curNight = 8;
+    let curNight = d.day > 0 ? d.day + 1 : 8;
     for (const k of orderedKeys) {
       let h = nightAlloc[k][di];
       while (h > 0) {
         const chunk = Math.min(2, h);
-        push(k, di, curNight, chunk);
+        push(k, di, curNight, chunk, true);
         curNight += chunk;
         h -= chunk;
       }

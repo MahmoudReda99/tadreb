@@ -261,11 +261,12 @@ describe('custom subjects & night study flag', () => {
 
       for (let di = 0; di < 6; di++) {
         let lastDayEnd = 0;
-        let lastNightEnd = 7;
+        let lastNightEnd = ex.days[di].day;
         for (const r of ex.rows) {
           for (const slot of r.slots[di]) {
             const [start, end] = slot.lectures.split('-').map(Number);
-            if (start < 8) {
+            const isNight = slot.isNight ?? (start > ex.days[di].day);
+            if (!isNight) {
               expect(start).toBeGreaterThanOrEqual(lastDayEnd);
               lastDayEnd = end;
             } else {
