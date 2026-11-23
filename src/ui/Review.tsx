@@ -3,7 +3,7 @@ import type { CustomSubject, DateRange, Instructions, SubjectKey, SubjectPcts } 
 import { getNightKeys } from '../engine/types';
 import { LOW } from '../parser/parse';
 import { DAYS_AR, addDays, defaultWeeksPerMonth, dowOf, monthNames } from '../engine/dates';
-import { formatDate, parseBulkHolidays, parseDate, parseList, parseNum, toArabic, toLatin, type DateCtx } from './parseInput';
+import { formatDate, parseDate, parseList, parseNum, toArabic, toLatin, type DateCtx } from './parseInput';
 
 interface Props {
   inst: Instructions;
@@ -16,8 +16,6 @@ interface Props {
   onAccept: () => void;
   onBack: () => void;
 }
-
-const LIST_HINT = 'اكتب رقم الأسبوع أو أكثر، وافصل بينها بفاصلة أو مسافة أو أى علامة (مثال: 12، 13). كل رقم أسبوع مستقل: 19-23 تعنى الأسبوعين 19 و23 فقط وليس ما بينهما. تقبل الأرقام الهندية والعادية.';
 
 /** digits (either kind) and the separators a list or a date needs — letters and symbols are dropped as they are typed */
 const keepList = (s: string) => s.replace(/[^0-9٠-٩۰-۹\s,،;؛\-–—/.]/g, '');
@@ -163,6 +161,112 @@ function DateInput({
   );
 }
 
+/** Individual numeric input boxes for week lists (2 boxes by default + "+ إضافة أسبوع" button) */
+function WeekFieldsInput({
+  value,
+  onCommit,
+  min,
+  max,
+  defaultCount = 2,
+}: {
+  value: number[];
+  onCommit: (v: number[]) => void;
+  min?: number;
+  max?: number;
+  defaultCount?: number;
+}) {
+  const makeInitial = (vals: number[]) => {
+    const arr = vals.map(n => toArabic(String(n)));
+    while (arr.length < defaultCount) arr.push('');
+    return arr;
+  };
+  const [slots, setSlots] = useState<string[]>(() => makeInitial(value));
+  const [warn, setWarn] = useState<string | null>(null);
+  const sig = value.join(',');
+  const prevSig = useRef(sig);
+
+  useEffect(() => {
+    if (prevSig.current !== sig) {
+      prevSig.current = sig;
+      setSlots(makeInitial(value));
+      setWarn(null);
+    }
+  }, [sig]);
+
+  const commit = (nextSlots: string[]) => {
+    const nums: number[] = [];
+    const outOfRange: number[] = [];
+    for (const s of nextSlots) {
+      const n = parseNum(s);
+      if (n === null) continue;
+      if ((min !== undefined && n < min) || (max !== undefined && n > max)) {
+        outOfRange.push(n);
+      } else if (!nums.includes(n)) {
+        nums.push(n);
+      }
+    }
+    nums.sort((a, b) => a - b);
+    setWarn(
+      outOfRange.length
+        ? `خارج النطاق (${toArabic(String(min ?? ''))}–${toArabic(String(max ?? ''))}): ${outOfRange.map(n => toArabic(String(n))).join('، ')}`
+        : null,
+    );
+    prevSig.current = nums.join(',');
+    onCommit(nums);
+  };
+
+  return (
+    <div className="week-fields">
+      <div className="week-fields-grid">
+        {slots.map((val, idx) => (
+          <div key={idx} className="week-field-item">
+            <input
+              dir="rtl"
+              inputMode="numeric"
+              placeholder="رقم الأسبوع"
+              value={val}
+              onChange={e => {
+                const cleaned = toArabic(toLatin(e.target.value).replace(/[^0-9]/g, ''));
+                const next = slots.map((s, i) => (i === idx ? cleaned : s));
+                setSlots(next);
+              }}
+              onBlur={() => commit(slots)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commit(slots);
+                }
+              }}
+            />
+            {slots.length > defaultCount && (
+              <button
+                type="button"
+                className="week-field-del"
+                aria-label="حذف"
+                onClick={() => {
+                  const next = slots.filter((_, i) => i !== idx);
+                  setSlots(next);
+                  commit(next);
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="mini"
+        onClick={() => setSlots(s => [...s, ''])}
+      >
+        + إضافة أسبوع
+      </button>
+      {warn && <small className="warn">{warn}</small>}
+    </div>
+  );
+}
+
 interface HRow { id: number; from: string | null; to: string | null }
 /** official holidays: one row per holiday, "from" and an optional "to" for several days */
 function HolidayList({
@@ -183,9 +287,6 @@ function HolidayList({
     }))
   );
   const [focusRowId, setFocusRowId] = useState<number | null>(null);
-  const [showBulk, setShowBulk] = useState(false);
-  const [bulkText, setBulkText] = useState('');
-  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
 
   const push = (next: HRow[]) => {
     setRows(next);
@@ -218,60 +319,8 @@ function HolidayList({
     }
   };
 
-  const handleBulkAdd = () => {
-    const parsed = parseBulkHolidays(bulkText, ctx);
-    if (parsed.length === 0) {
-      setBulkMsg('لم يتم التعرف على أية تواريخ صالحة. تأكد من الصيغة (مثال: 6-10، 7-1).');
-      return;
-    }
-    const newRows: HRow[] = parsed.map(p => ({
-      id: ++seq.current,
-      from: p.from,
-      to: p.to,
-    }));
-    const existingActive = rows.filter(r => r.from);
-    push([...existingActive, ...newRows]);
-    setBulkText('');
-    setBulkMsg(`✓ تمت إضافة ${toArabic(String(parsed.length))} أجازات بنجاح.`);
-  };
-
   return (
     <div className="hol">
-      <div className="hol-top-actions">
-        <button
-          type="button"
-          className="mini ghost"
-          onClick={() => { setShowBulk(!showBulk); setBulkMsg(null); }}
-        >
-          {showBulk ? '✕ إغلاق الإضافة السريعة' : '⚡ إضافة سريعة / لصق عدة تواريخ دفعة واحدة'}
-        </button>
-      </div>
-
-      {showBulk && (
-        <div className="hol-bulk-box">
-          <small>
-            يمكنك إدخال عدة أجازات دفعة واحدة (اليوم والشهر فقط مثل <strong>١٢-٧</strong> أو <strong>٦-١٠</strong> وسيتم استنتاج العام تلقائياً). افصل بينها بفاصلة (،) أو اجعل كل تاريخ في سطر:
-          </small>
-          <textarea
-            rows={3}
-            dir="auto"
-            value={bulkText}
-            onChange={e => { setBulkText(e.target.value); setBulkMsg(null); }}
-            placeholder={`مثال:\n6-10\n7-1\n25-1\n25-4\n1-5\n12-7\n23-7`}
-          />
-          <div className="hol-bulk-actions">
-            <button
-              type="button"
-              className="mini primary"
-              onClick={handleBulkAdd}
-              disabled={!bulkText.trim()}
-            >
-              + إدراج كل الأجازات المكتوبة
-            </button>
-            {bulkMsg && <span className="hol-bulk-msg">{bulkMsg}</span>}
-          </div>
-        </div>
-      )}
 
       {rows.length === 0 && <small>لا توجد أجازات — اضغط «إضافة أجازة» أو استخدم «الإضافة السريعة».</small>}
 
@@ -504,30 +553,53 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
     <div className="panel">
       <div className="bar"><button className="btn ghost" onClick={onBack}>← رجوع</button><h2>مراجعة التعليمات</h2></div>
       {notes.length > 0 && <ul className="notes-list">{notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
-      <p className="hint">الحقول المظللة استُخرجت بثقة منخفضة (غالباً من التعرف الضوئى). عدّلها أو اضغط «القيمة صحيحة» لتأكيدها قبل الحساب.</p>
+      {pending.length > 0 && <p className="hint">عدّل الحقول المظللة أو اضغط «القيمة صحيحة» قبل الحساب.</p>}
       <div className="form">
         <Field k="courseName" label="الدورة / الوحدة" wide><input value={inst.courseName} onChange={e => set('courseName', e.target.value)} /></Field>
-        <Field k="yearLabel" label="العام التدريبى (مثل 2025 / 2026)"><input dir="rtl" inputMode="numeric" value={toArabic(inst.yearLabel ?? '')} placeholder="يُشتق من التواريخ" onChange={e => { const v = toLatin(e.target.value).replace(/[^0-9\s/\-–]/g, ''); set('yearLabel', v.trim() ? v : undefined); }} /></Field>
-        <Field k="startSaturday" label="أول سبت (بداية الأسبوع 1)" hint="اكتب التاريخ أرقاماً فقط بأى شكل: ٣-٤-٢٠٢٦ أو ٣/٤/٢٠٢٦ أو ٣.٤.٢٠٢٦.">
-          <DateInput value={inst.startSaturday} ctx={ctx} onCommit={d => d && set('startSaturday', d)} label="أول سبت" />
+        <Field k="yearLabel" label="العام التدريبى"><input dir="rtl" inputMode="numeric" value={toArabic(inst.yearLabel ?? '')} placeholder="يُشتق من التواريخ" onChange={e => { const v = toLatin(e.target.value).replace(/[^0-9\s/\-–]/g, ''); set('yearLabel', v.trim() ? v : undefined); }} /></Field>
+        <Field k="startSaturday" label="أول سبت في الفترة" hint="أدخل التاريخ (مثال: ٣/١/٢٠٢٦)">
+          <DateInput value={inst.startSaturday} ctx={ctx} onCommit={d => d && set('startSaturday', d)} label="أول سبت في الفترة" />
           {dowOf(inst.startSaturday) !== 6 && <small className="warn">هذا اليوم {WEEKDAY(inst.startSaturday)} وليس سبتاً — راجع التاريخ.</small>}
         </Field>
         <Field k="totalWeeks" label="عدد الأسابيع"><NumInput value={inst.totalWeeks} min={1} max={60} onCommit={n => set('totalWeeks', n)} label="عدد الأسابيع" /></Field>
-        <Field k="firstWeek" label="رقم أول أسبوع (1 للفترة الأولى، 27 للثانية)" hint="الرقم المطبوع على أول أسبوع فى الأجندة."><NumInput value={inst.firstWeek} min={1} max={200} onCommit={n => set('firstWeek', n)} label="رقم أول أسبوع" /></Field>
-        <Field k="prepWeeks" label="أسابيع الفترة التحضيرية" hint={LIST_HINT}><ListInput value={inst.prepWeeks} onCommit={v => set('prepWeeks', v)} min={inst.firstWeek} max={inst.firstWeek + inst.totalWeeks - 1} /></Field>
-        <Field k="opsWeeks" label="أسابيع مهام العمليات" hint={LIST_HINT}><ListInput value={inst.opsWeeks} onCommit={v => set('opsWeeks', v)} min={inst.firstWeek} max={inst.firstWeek + inst.totalWeeks - 1} /></Field>
-        <Field k="reserveWeeks" label="أسابيع الاحتياط" hint={LIST_HINT}><ListInput value={inst.reserveWeeks} onCommit={v => set('reserveWeeks', v)} min={inst.firstWeek} max={inst.firstWeek + inst.totalWeeks - 1} /></Field>
-        <Field k="campWeeks" label="أسابيع المعسكر الليلى" hint={LIST_HINT}><ListInput value={inst.campWeeks} onCommit={v => set('campWeeks', v)} min={inst.firstWeek} max={inst.firstWeek + inst.totalWeeks - 1} /></Field>
-        <Field k="ramadan" label="شهر رمضان (من / إلى)" hint="اتركهما فارغين إن لم يقع رمضان فى هذه الفترة.">
+        <Field k="firstWeek" label="رقم أول أسبوع">
+          <select
+            className="maint-select"
+            value={inst.firstWeek || 1}
+            onChange={e => {
+              const nextFirst = Number(e.target.value);
+              const maxW = nextFirst + inst.totalWeeks - 1;
+              const nextSel = inst.selectedWeek < nextFirst || inst.selectedWeek > maxW ? nextFirst : inst.selectedWeek;
+              onChange({ ...inst, firstWeek: nextFirst, selectedWeek: nextSel }, 'firstWeek');
+            }}
+          >
+            <option value={1}>١ — الفترة الأولى</option>
+            <option value={27}>٢٧ — الفترة الثانية</option>
+            {inst.firstWeek && inst.firstWeek !== 1 && inst.firstWeek !== 27 && (
+              <option value={inst.firstWeek}>{toArabic(String(inst.firstWeek))}</option>
+            )}
+          </select>
+        </Field>
+        <Field k="prepWeeks" label="أسابيع الفترة التحضيرية"><WeekFieldsInput value={inst.prepWeeks} onCommit={v => set('prepWeeks', v)} min={inst.firstWeek} max={inst.firstWeek + inst.totalWeeks - 1} /></Field>
+        <Field k="opsWeeks" label="أسابيع مهام العمليات"><WeekFieldsInput value={inst.opsWeeks} onCommit={v => set('opsWeeks', v)} min={inst.firstWeek} max={inst.firstWeek + inst.totalWeeks - 1} /></Field>
+        <Field k="reserveWeeks" label="أسابيع الاحتياط"><WeekFieldsInput value={inst.reserveWeeks} onCommit={v => set('reserveWeeks', v)} min={inst.firstWeek} max={inst.firstWeek + inst.totalWeeks - 1} /></Field>
+        <Field k="campWeeks" label="أسابيع المعسكر الليلى"><WeekFieldsInput value={inst.campWeeks} onCommit={v => set('campWeeks', v)} min={inst.firstWeek} max={inst.firstWeek + inst.totalWeeks - 1} /></Field>
+        <Field k="maintenanceDow" label="يوم الصيانة الأسبوعى" hint="اختر اليوم">
+          <select className="maint-select" value={inst.maintenanceDow ?? 1} onChange={e => set('maintenanceDow', Number(e.target.value))}>
+            <option value={1}>الإثنين</option>
+            <option value={2}>الثلاثاء</option>
+          </select>
+        </Field>
+        <Field k="ramadan" label="شهر رمضان (من / إلى)" hint="اتركهما فارغين إن لم يوجد">
           <div className="two">
             <div><small>من</small><DateInput value={inst.ramadan?.from} ctx={ctx} optional onCommit={d => set('ramadan', d ? { from: d, to: inst.ramadan?.to && inst.ramadan.to >= d ? inst.ramadan.to : d } : null, 'ramadan')} label="رمضان من" /></div>
             <div><small>إلى</small><DateInput value={inst.ramadan?.to} ctx={ctx} optional onCommit={d => set('ramadan', inst.ramadan ? { ...inst.ramadan, to: d ?? inst.ramadan.from } : d ? { from: d, to: d } : null, 'ramadan')} label="رمضان إلى" /></div>
           </div>
         </Field>
-        <Field k="holidays" label="الأجازات الرسمية" wide hint="أجازة لكل صف. اكتب اليوم والشهر فقط (مثل 12-7 أو 6-10) وسيتم استنتاج العام تلقائياً وإكماله. اضغط Enter للانتقال للصف التالي مباشرة، أو استخدم «الإضافة السريعة» للصق عدة تواريخ دفعة واحدة.">
+        <Field k="holidays" label="الأجازات الرسمية" wide hint="أدخل اليوم والشهر (مثال: ٧-١٢)">
           <HolidayList value={inst.holidays} ctx={ctx} onCommit={v => set('holidays', v)} />
         </Field>
-        <Field k="weeksPerMonth" label="عدد أسابيع كل شهر (قابل للتعديل)" wide hint="كم أسبوعاً يُحسب لكل شهر فى جداول الامتحان. مجموعها يساوى عدد الأسابيع.">
+        <Field k="weeksPerMonth" label="عدد أسابيع كل شهر" wide>
           <div className="two">
             <ListInput value={inst.weeksPerMonth} onCommit={v => set('weeksPerMonth', v)} sorted={false} />
             <button type="button" className="mini" onClick={() => set('weeksPerMonth', defaultWeeksPerMonth(inst.startSaturday, inst.totalWeeks))}>حسب التقويم</button>
@@ -544,11 +616,10 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
                 ))}
               </tr>))}</tbody></table>
         </Field>
-        <Field k="marchWeekOfMonth" label="أسبوع الشهر الذى يحمل يوم طابور السير" hint="رقم الأسبوع داخل كل شهر الذى يُخصَّص سبته للطابور والأمن الحربى. مثال: 3 تعنى السبت من الأسبوع الثالث فى الشهر."><NumInput value={inst.marchWeekOfMonth} min={1} max={5} onCommit={n => set('marchWeekOfMonth', n)} label="أسبوع الشهر" /></Field>
-        <Field k="marchWeekExceptions" label="شهور يختلف فيها أسبوع يوم طابور السير"
-          hint="القاعدة العامة أعلاه تنطبق على كل الشهور. أضف هنا أى شهر يكون فيه يوم طابور السير فى أسبوع آخر (مثال: شهر مارس فى الأسبوع الرابع).">
+        <Field k="marchWeekOfMonth" label="أسبوع الشهر الذى يحمل يوم طابور السير" hint="رقم الأسبوع داخل الشهر (مثال: ٣)"><NumInput value={inst.marchWeekOfMonth} min={1} max={5} onCommit={n => set('marchWeekOfMonth', n)} label="أسبوع الشهر" /></Field>
+        <Field k="marchWeekExceptions" label="شهور يختلف فيها أسبوع يوم طابور السير">
           <div className="exc">
-            {Object.entries(inst.marchWeekExceptions).length === 0 && <small>لا توجد استثناءات — كل الشهور تتبع القاعدة العامة.</small>}
+            {Object.entries(inst.marchWeekExceptions).length === 0 && <small>لا توجد استثناءات</small>}
             {Object.entries(inst.marchWeekExceptions).map(([m, w]) => (
               <div className="exc-row" key={m}>
                 <select aria-label="الشهر" value={m} onChange={e => {
@@ -570,14 +641,14 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
             }}>+ إضافة شهر مختلف</button>
           </div>
         </Field>
-        <Field k="levelWeeks" label="أسابيع المستويات (فرد / طاقم / مركز)" hint="عدد أسابيع التدريب فى كل مستوى بالترتيب، ومجموعها يساوى أسابيع التدريب الفعلية (بعد استبعاد التحضيرى والعمليات والاحتياط).">
+        <Field k="levelWeeks" label="أسابيع المستويات (فرد / طاقم / مركز)">
           <div className="three">
             {(['individual', 'crew', 'centre'] as const).map(l => (
               <NumInput key={l} value={inst.levelWeeks[l]} min={0} max={60} label={l === 'individual' ? 'فرد' : l === 'crew' ? 'طاقم' : 'مركز'} onCommit={n => set('levelWeeks', { ...inst.levelWeeks, [l]: n }, 'levelWeeks')} />
             ))}
           </div>
         </Field>
-        <Field k="pcts" label="النسب المئوية للموضوعات والدراسة الليلية" hint="حدد نسبة كل موضوع، وأشر بعلامة (🌙 دراسة ليلية) على الموضوعات التى لها تدريب ليلى. يمكنك أيضاً إضافة موضوعات جديدة وتحديد إن كانت رئيسية أو عامة." wide>
+        <Field k="pcts" label="النسب المئوية للموضوعات والدراسة الليلية" wide>
           {/* Status banner - only shown when something is wrong */}
           {!allPctsOk && (
             <div className={`pct-status-banner ${totalSubjectsSum > 100 ? 'danger' : 'warn'}`}>
@@ -852,10 +923,10 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
             </div>
           </div>
         </Field>
-        <Field k="selectedMonth" label="شهر جدول الربط التفصيلى" hint="الشهر الذى يُقسَّم إلى أسابيع فى جدول الربط (المطلوب فى الامتحان).">
+        <Field k="selectedMonth" label="شهر جدول الربط التفصيلى">
           <select value={inst.selectedMonth} onChange={e => set('selectedMonth', +e.target.value)}>{names.map((n, i) => <option key={i} value={i}>{n}</option>)}</select>
         </Field>
-        <Field k="selectedWeek" label="أسبوع المستخرج" hint="رقم الأسبوع المطلوب عمل مستخرج الموضوعات له."><NumInput value={inst.selectedWeek} min={inst.firstWeek} max={inst.firstWeek + inst.totalWeeks - 1} onCommit={n => set('selectedWeek', n)} label="أسبوع المستخرج" /></Field>
+        <Field k="selectedWeek" label="أسبوع المستخرج"><NumInput value={inst.selectedWeek} min={inst.firstWeek} max={inst.firstWeek + inst.totalWeeks - 1} onCommit={n => set('selectedWeek', n)} label="أسبوع المستخرج" /></Field>
       </div>
       {rawText && (
         <details className="raw">

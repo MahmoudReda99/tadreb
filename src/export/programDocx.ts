@@ -377,8 +377,8 @@ export function buildWeekProgram(
             isNight: false,
           });
         }
-      } else if (di === 2 || d?.dow === 1 || d?.kind === 'maintenance') {
-        // ── الإثنين: ط ١ تربية بدنية وباقي اليوم يوم صيانة ──
+      } else if ((d ? d.dow === (inst.maintenanceDow ?? 1) : di === ((inst.maintenanceDow ?? 1) === 2 ? 3 : 2)) || d?.kind === 'maintenance') {
+        // ── يوم الصيانة (الإثنين افتراضياً أو الثلاثاء حسب الاختيار): ط ١ تربية بدنية وباقي اليوم يوم صيانة ──
         const p1Key = p1 ? p1.key : 'fitness';
         programSlots.push(buildSubjectSlot(di, t1, 'ط ١', p1Key, false, p1?.hours ?? 1));
         programSlots.push({

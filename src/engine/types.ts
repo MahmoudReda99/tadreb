@@ -34,6 +34,8 @@ export interface Instructions {
   nightKeys?: string[];
   customSubjects?: CustomSubject[];
   disabledSubjects?: string[];
+  /** Day of week for weekly maintenance day: 1 = Monday (default), 2 = Tuesday */
+  maintenanceDow?: number;
   /** Manual lesson selections for Page 6 keyed by `${week}:${dayIdx}:${slotIdx}` */
   lessonOverrides?: Record<string, LessonOverride>;
 }

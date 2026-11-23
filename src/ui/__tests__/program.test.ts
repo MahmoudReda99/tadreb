@@ -289,4 +289,46 @@ describe('Training Program Sheet & Docx Mapping', () => {
     // No slot should be '—' or 'تربية بدنية'
     expect(sat.slots.every(s => s.subject !== '—' && s.subject !== 'تربية بدنية')).toBe(true);
   });
+
+  it('supports switching maintenance day to Tuesday (maintenanceDow = 2) across normal and Ramadan weeks', () => {
+    const tueInst = { ...inst, maintenanceDow: 2 };
+    const tueAgenda = calculateAgenda(tueInst);
+    const tueDist = calculateDistribution(tueInst, tueAgenda);
+    const tueLink = calculateLinking(tueInst, tueAgenda, tueDist);
+
+    // Normal week (week 3): Monday gets 4 full training slots, Tuesday gets ط ١ fitness + merged يوم صيانة
+    const ex3 = calculateWeekly(tueAgenda, tueLink, 3, tueInst)!;
+    expect(ex3.checks.ok).toBe(true);
+    expect(ex3.days[2].kind).toBe('short'); // Monday
+    expect(ex3.days[2].day).toBe(7);
+    expect(ex3.days[3].kind).toBe('maintenance'); // Tuesday
+    expect(ex3.days[3].day).toBe(1);
+
+    const program3 = buildWeekProgram(tueInst, ex3);
+    expect(program3[2].dayName).toBe('الإثنين');
+    expect(program3[2].slots.length).toBeGreaterThanOrEqual(4);
+    expect(program3[2].slots.some(s => s.isMerged)).toBe(false);
+
+    expect(program3[3].dayName).toBe('الثلاثاء');
+    expect(program3[3].slots.length).toBe(2);
+    expect(program3[3].slots[0].subject).toBe('تربية بدنية');
+    expect(program3[3].slots[1].isMerged).toBe(true);
+    expect(program3[3].slots[1].mergedLabel).toBe('يوم صيانة');
+
+    // Ramadan week: Tuesday still gets Ramadan timing + merged يوم صيانة, Monday gets 4 Ramadan slots
+    let ramWeek = -1;
+    for (let w = 1; w <= 26; w++) {
+      const ex = calculateWeekly(tueAgenda, tueLink, w, tueInst);
+      if (ex && ex.days.some(d => d.kind === 'ramadan')) {
+        ramWeek = w;
+        break;
+      }
+    }
+    const exRam = calculateWeekly(tueAgenda, tueLink, ramWeek, tueInst)!;
+    const progRam = buildWeekProgram(tueInst, exRam);
+    expect(progRam[2].slots.length).toBe(4);
+    expect(progRam[3].slots.length).toBe(2);
+    expect(progRam[3].slots[0].timing).toBe('٩٠٠ - ٠٩٣٥');
+    expect(progRam[3].slots[1].mergedLabel).toBe('يوم صيانة');
+  });
 });

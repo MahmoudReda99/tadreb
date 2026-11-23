@@ -7,9 +7,7 @@ import { calculateWeekly } from './engine/weekly';
 import { FIXTURE_108, FIXTURE_111 } from './engine/fixtures';
 import { emptyInstructions } from './engine/instructions';
 import { monthNames } from './engine/dates';
-import { parseInstructions } from './parser/parse';
-import { extractText } from './parser/extract';
-import { importJson, listProjects, removeProject, saveProject, type Project } from './db/database';
+import { listProjects, removeProject, saveProject, type Project } from './db/database';
 import { exportPdf } from './export/pdf';
 import { Review } from './ui/Review';
 import { Inspector } from './ui/Inspector';
@@ -55,8 +53,6 @@ export default function App() {
   const [confirmed, setConfirmed] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState<string[]>([]);
   const [rawText, setRawText] = useState('');
-  const [queue, setQueue] = useState<{ file: File; url: string }[]>([]);
-  const [busy, setBusy] = useState<{ label: string; p: number } | null>(null);
   const [error, setError] = useState('');
   const [audit, setAudit] = useState<Audit | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -77,34 +73,6 @@ export default function App() {
     } catch (e) { console.error(e); return null; }
   }, [inst, view]);
 
-  /** photos are collected first (instructions usually span several pages); documents start reading at once */
-  function onPick(files: File[]) {
-    setError('');
-    if (files.every(f => f.type.startsWith('image/'))) setQueue(q => [...q, ...files.map(file => ({ file, url: URL.createObjectURL(file) }))]);
-    else onFiles(files);
-  }
-  function startQueue() {
-    const files = queue.map(q => q.file);
-    queue.forEach(q => URL.revokeObjectURL(q.url));
-    setQueue([]);
-    onFiles(files);
-  }
-  function moveQ(i: number, d: -1 | 1) {
-    setQueue(q => { const a = [...q]; const j = i + d; if (j < 0 || j >= a.length) return a; [a[i], a[j]] = [a[j], a[i]]; return a; });
-  }
-  function dropQ(i: number) {
-    setQueue(q => { URL.revokeObjectURL(q[i].url); return q.filter((_, k) => k !== i); });
-  }
-  async function onFiles(files: File[]) {
-    setError(''); setBusy({ label: 'جارى قراءة الملف…', p: 0 });
-    try {
-      const x = await extractText(files, p => setBusy({ label: 'التعرف الضوئى على النص العربى…', p }));
-      const r = parseInstructions(x.text, x.source === 'docx' || x.source === 'txt' || x.source === 'pdf' ? x.confidence : Math.max(0.6, x.confidence));
-      setInst(r.instructions); setConf(r.conf); setNotes([...(x.errors?.length ? [`تعذّرت قراءة بعض الصفحات على هذا الجهاز: ${x.errors.join(' — ')}`] : []), ...r.notes]); setRawText(x.source === 'docx' || x.source === 'txt' ? '' : x.text); setConfirmed(new Set());
-      setPid(uid()); setView('review');
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(null); }
-  }
   function open(i: Instructions, id?: string) {
     setInst(i); setConf({}); setNotes([]); setRawText(''); setConfirmed(new Set()); setPid(id ?? uid()); setView('review');
   }
@@ -121,9 +89,6 @@ export default function App() {
     setExporting(true);
     try { await exportPdf(model); } catch (e) { setError(String(e)); } finally { setExporting(false); }
   }
-  async function importFile(f: File) {
-    try { open(importJson(await f.text())); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-  }
 
   const monthLabel = useMemo(() => monthNames(inst.startSaturday, inst.weeksPerMonth.length)[inst.selectedMonth] ?? '', [inst]);
 
@@ -136,42 +101,20 @@ export default function App() {
 
       {view === 'upload' && (
         <main className="panel">
-          <label className="drop">
-            <input type="file" multiple accept=".docx,.pdf,image/*,.txt" hidden onChange={e => { const fs = [...(e.target.files ?? [])]; if (fs.length) onPick(fs); e.target.value = ''; }} />
-            <div className="big">⬆</div>
-            <b>ارفع صفحة التعليمات</b>
-            <span>DOCX أو PDF، أو صور (اختر عدة صور إن كانت التعليمات أكثر من صفحة) — تُعالَج على جهازك فقط</span>
-          </label>
-          <label className="btn ghost cam">📷 التقاط صفحة بالكاميرا
-            <input type="file" accept="image/*" capture="environment" hidden onChange={e => { const fs = [...(e.target.files ?? [])]; if (fs.length) onPick(fs); e.target.value = ''; }} />
-          </label>
-          {queue.length > 0 && (
-            <section className="tray" aria-label="صفحات التعليمات">
-              <h3>صفحات التعليمات ({queue.length}) — بالترتيب</h3>
-              <p className="hint">أضف باقى الصفحات بنفس الطريقة (رفع صور أو كاميرا)، ورتّبها ثم اضغط «قراءة».</p>
-              <ol>
-                {queue.map((q, i) => (
-                  <li key={q.url}>
-                    <img src={q.url} alt={`صفحة ${i + 1}`} />
-                    <span className="no">{i + 1}</span>
-                    <div className="ctl">
-                      <button type="button" className="mini" onClick={() => moveQ(i, -1)} disabled={i === 0} aria-label="قبل">▲</button>
-                      <button type="button" className="mini" onClick={() => moveQ(i, 1)} disabled={i === queue.length - 1} aria-label="بعد">▼</button>
-                      <button type="button" className="mini danger" onClick={() => dropQ(i)} aria-label="حذف">✕</button>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-              <button type="button" className="btn primary big" onClick={startQueue} disabled={!!busy}>قراءة التعليمات من {queue.length === 1 ? 'الصورة' : queue.length === 2 ? 'الصفحتين' : queue.length <= 10 ? `${queue.length} صفحات` : `${queue.length} صفحة`}</button>
-            </section>
-          )}
-          {busy && <div className="busy"><span>{busy.label}</span><progress value={busy.p || undefined} max={1} /></div>}
+          <button type="button" className="enter-inst-cta" onClick={() => open(emptyInstructions())}>
+            <span className="enter-inst-icon" aria-hidden="true">✎</span>
+            <span className="enter-inst-text">
+              <b>إدخال التعليمات</b>
+              <small>إعداد دورة تدريبية جديدة وإدخال بيانات وتوجيهات التدريب</small>
+            </span>
+            <span className="enter-inst-arrow" aria-hidden="true">←</span>
+          </button>
+
           {error && <div className="err" role="alert">{error}</div>}
-          <div className="row">
+
+          <div className="row samples-row">
             <button className="btn" onClick={() => open(FIXTURE_108)}>نموذج الدورة 108</button>
             <button className="btn" onClick={() => open(FIXTURE_111)}>نموذج الدورة 111</button>
-            <label className="btn ghost">استيراد JSON<input type="file" accept="application/json,.json" hidden onChange={e => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ''; }} /></label>
-            <button className="btn ghost" onClick={() => open(emptyInstructions())}>إدخال يدوى</button>
           </div>
           <h2>المشروعات المحفوظة</h2>
           {projects.length === 0 ? <p className="hint">لا توجد مشروعات محفوظة بعد.</p> : (

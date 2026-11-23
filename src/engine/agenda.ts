@@ -50,13 +50,15 @@ function resolveDay(date: string, week: number, month: number, weekInMonth: numb
     };
   }
   const ram = !!inst.ramadan && inRange(date, inst.ramadan);
+  const maintDow = inst.maintenanceDow ?? 1; // 1 = Monday (default), 2 = Tuesday
+  const altShortDow = maintDow === 2 ? 1 : 2;
   let h: Hours; let rule: string; let base: DayKind;
   if (dow === 5) { h = Z; base = 'friday'; rule = 'الجمعة راحة أسبوعية — لا يوجد تدريب'; }
-  else if (dow === 6 || dow === 2) { h = { ...Z, day: 7, fitness: 1 }; base = 'short'; rule = 'يوم قصير — 7 ساعات نهاراً، أولها لياقة بدنية'; }
+  else if (dow === 6 || dow === altShortDow) { h = { ...Z, day: 7, fitness: 1 }; base = 'short'; rule = 'يوم قصير — 7 ساعات نهاراً، أولها لياقة بدنية'; }
   else if (dow === 0 || dow === 3) {
     if (ram) { h = { ...Z, day: 7, fitness: 1 }; base = 'short'; rule = 'فى رمضان يصبح اليوم الطويل قصيراً — 7 ساعات نهاراً وبدون ليل'; }
     else { h = { ...Z, day: 7, night: 4, fitness: 1 }; base = 'long'; rule = 'يوم طويل — 7 ساعات نهاراً + 4 ليلاً، أولها لياقة بدنية'; }
-  } else if (dow === 1) { h = { ...Z, day: 1, fitness: 1 }; base = 'maintenance'; rule = 'يوم صيانة — ساعة واحدة لياقة بدنية'; }
+  } else if (dow === maintDow) { h = { ...Z, day: 1, fitness: 1 }; base = 'maintenance'; rule = 'يوم صيانة — ساعة واحدة لياقة بدنية'; }
   else { h = { ...Z, day: 1, education: 1 }; base = 'personnel'; rule = 'يوم شئون أفراد — ساعة واحدة تعليم منضم'; }
   if (ram) return { kind: 'ramadan', h, rule: `شهر رمضان (لونه لبنى) — ${rule}` };
   return { kind: base, h, rule };

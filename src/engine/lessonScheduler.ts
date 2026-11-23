@@ -119,7 +119,7 @@ export function extractWeekSlotSpecs(inst: Instructions, ex: WeeklyExtract): Raw
       } else if (secSlot && secSlot.hours >= 2) {
         specs.push({ dayIdx: di, tabour: 'ط ٦ / ٧', subjectKey: 'security', durationHours: secSlot.hours, isNight: false });
       }
-    } else if (di === 2 || d.dow === 1 || d.kind === 'maintenance') {
+    } else if (d.dow === (inst.maintenanceDow ?? 1) || d.kind === 'maintenance') {
       const p1Key = p1 ? p1.key : 'fitness';
       specs.push({ dayIdx: di, tabour: 'ط ١', subjectKey: p1Key, durationHours: p1?.hours ?? 1, isNight: false });
     } else if (di === 5 || d.dow === 4 || d.kind === 'personnel') {
