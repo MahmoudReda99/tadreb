@@ -17,9 +17,26 @@ export async function exportPdf(m: Model, filename = 'اجندة-التدريب-
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
     const pages = host.querySelectorAll<HTMLElement>('.paper');
     for (let i = 0; i < pages.length; i++) {
-      const canvas = await html2canvas(pages[i], { scale: 2, backgroundColor: '#ffffff', useCORS: false, logging: false });
-      if (i > 0) pdf.addPage('a4', 'landscape');
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 297, 210);
+      const el = pages[i];
+      const isPortrait = el.classList.contains('program-paper');
+      const pageW = isPortrait ? 210 : 297;
+      const pageH = isPortrait ? 297 : 210;
+      const orient = isPortrait ? 'portrait' : 'landscape';
+
+      const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: false, logging: false });
+      if (i > 0) pdf.addPage('a4', orient);
+
+      // Fit proportionally within A4 bounds so no rows or footer are ever clipped
+      const margin = 2;
+      const maxW = pageW - margin * 2;
+      const maxH = pageH - margin * 2;
+      const ratio = Math.min(maxW / canvas.width, maxH / canvas.height);
+      const drawW = canvas.width * ratio;
+      const drawH = canvas.height * ratio;
+      const offsetX = (pageW - drawW) / 2;
+      const offsetY = (pageH - drawH) / 2;
+
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', offsetX, offsetY, drawW, drawH);
     }
     pdf.save(filename);
   } finally {

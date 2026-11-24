@@ -13,8 +13,10 @@ export interface Instructions {
   courseName: string;
   startSaturday: DateStr;
   totalWeeks: number;
-  /** printed number of the first week (1 for the first period, 27 for the second) */
+  /** printed number of the first week (1 for the first period, 27 for the second, 53 for the third) */
   firstWeek: number;
+  /** training period index: 1 = الأولى (default), 2 = الثانية, 3 = الثالثة */
+  period?: 1 | 2 | 3;
   /** training-year label as printed, e.g. "2025 / 2026" (derived from the dates when empty) */
   yearLabel?: string;
   weeksPerMonth: number[];

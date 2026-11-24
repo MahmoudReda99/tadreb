@@ -31,7 +31,7 @@ export const FIXTURE_108: Instructions = {
  * Verify it against your copy: the OCR cannot read the Arabic-Indic digits of that scan.
  */
 export const FIXTURE_111: Instructions = {
-  courseName: 'الدورة المتقدمة رقم (111) — الكتيبة الأولى / الفوج 652 إشارة / ج 2 ميد — الفترة الثانية',
+  courseName: 'الدورة المتقدمة رقم (111) — الكتيبة الأولى / الفوج 652 إشارة / ج 2 ميد',
   startSaturday: '2026-01-03',
   totalWeeks: 26,
   firstWeek: 27,

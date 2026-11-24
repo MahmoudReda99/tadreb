@@ -16,7 +16,7 @@ export function emptyInstructions(): Instructions {
     ramadan: null, holidays: [],
     marchSecurityByMonth: [], marchWeekOfMonth: 4, marchWeekExceptions: {},
     pcts: { ...DEFAULT_PCTS }, levelWeeks: { individual: 9, crew: 7, centre: 6 },
-    selectedMonth: 4, selectedWeek: 20,
+    selectedMonth: 0, selectedWeek: 1,
     nightKeys: ['tactics', 'tech', 'shooting', 'topography', 'recon', 'engineering', 'chemical'],
     customSubjects: [],
     disabledSubjects: [],

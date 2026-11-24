@@ -38,11 +38,16 @@ export function defaultWeeksPerMonth(startSaturday: DateStr, totalWeeks: number)
   return weeksByCalendar(startSaturday, totalWeeks);
 }
 
+/**
+ * Groups weeks into calendar months based on each week's Saturday (first day of the week),
+ * using the majority month only for week 0 if a course starts on Dec 30/31 before Jan 1.
+ */
 export function weeksByCalendar(startSaturday: DateStr, totalWeeks: number): number[] {
   const res: number[] = [];
   let prev = -1;
   for (let w = 0; w < totalWeeks; w++) {
-    const m = weekCalendarMonth(addDays(startSaturday, w * 7));
+    const sat = addDays(startSaturday, w * 7);
+    const m = w === 0 ? weekCalendarMonth(sat) : parseDate(sat).getUTCMonth();
     if (m !== prev) { res.push(0); prev = m; }
     res[res.length - 1]++;
   }

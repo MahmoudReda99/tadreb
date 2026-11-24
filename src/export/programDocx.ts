@@ -599,7 +599,7 @@ function subjectCellXml(w: number, slot: ProgramSlot, sz = 14, red = false, thic
   </w:tc>`;
 }
 
-export function buildDocxXml(inst: Instructions, ex: WeeklyExtract, schedule?: CourseLessonSchedule | null): string {
+function buildWeekBodyXml(inst: Instructions, ex: WeeklyExtract, schedule?: CourseLessonSchedule | null): string {
   const weekProgram = buildWeekProgram(inst, ex, schedule);
   const rows: string[] = [];
 
@@ -682,10 +682,7 @@ export function buildDocxXml(inst: Instructions, ex: WeeklyExtract, schedule?: C
   const fromDate = ex.from.split('-').reverse().join('/');
   const toDate = ex.to.split('-').reverse().join('/');
 
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:body>
-    <!-- Top 3-column Layout Table (Borderless) -->
+  return `    <!-- Top 3-column Layout Table (Borderless) -->
     <w:tbl>
       <w:tblPr>
         <w:tblW w:w="${tableTotalW}" w:type="dxa"/>
@@ -724,7 +721,7 @@ export function buildDocxXml(inst: Instructions, ex: WeeklyExtract, schedule?: C
           <w:tcPr><w:tcW w:w="3400" w:type="dxa"/></w:tcPr>
           <w:p>
             <w:pPr><w:bidi/><w:jc w:val="left"/><w:spacing w:after="0"/></w:pPr>
-            <w:r><w:rPr><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t>نموذج رقم ٥٤٦ ((هـ . تد رماية))</w:t></w:r>
+            <w:r><w:rPr><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t>نموذج رقم ٥٤٦ ((هـ . تد ))</w:t></w:r>
           </w:p>
         </w:tc>
       </w:tr>
@@ -822,16 +819,42 @@ export function buildDocxXml(inst: Instructions, ex: WeeklyExtract, schedule?: C
           </w:p>
         </w:tc>
       </w:tr>
-    </w:tbl>
+    </w:tbl>`;
+}
 
-    <!-- Page Setup: A4 Portrait, tight margins for 1-page fit -->
+const SECT_PR_XML = `    <!-- Page Setup: A4 Portrait, tight margins for 1-page fit -->
     <w:sectPr>
       <w:pgSz w:w="11906" w:h="16838" w:orient="portrait"/>
       <w:pgMar w:top="500" w:right="600" w:bottom="400" w:left="600" w:header="400" w:footer="400" w:gutter="0"/>
       <w:bidi/>
-    </w:sectPr>
+    </w:sectPr>`;
+
+function wrapDocumentXml(bodyXml: string): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+${bodyXml}
+${SECT_PR_XML}
   </w:body>
 </w:document>`;
+}
+
+export function buildDocxXml(inst: Instructions, ex: WeeklyExtract, schedule?: CourseLessonSchedule | null): string {
+  return wrapDocumentXml(buildWeekBodyXml(inst, ex, schedule));
+}
+
+export function buildMultiWeekDocxXml(
+  inst: Instructions,
+  extracts: WeeklyExtract[],
+  agenda?: AgendaResult,
+  linking?: LinkingResult,
+): string {
+  const pageBreak = `    <w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+  const bodies = extracts.map(ex => {
+    const schedule = agenda && linking ? computeCourseLessons(inst, agenda, linking, ex.week) : null;
+    return buildWeekBodyXml(inst, ex, schedule);
+  });
+  return wrapDocumentXml(bodies.join(`\n${pageBreak}\n`));
 }
 
 const CONTENT_TYPES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -909,6 +932,35 @@ export async function downloadProgramDocx(
   const a = document.createElement('a');
   a.href = url;
   a.download = `نموذج_٥٤٦_برنامج_تدريب_السرية_أسبوع_${ex.week}.docx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadMonthProgramsDocx(
+  inst: Instructions,
+  extracts: WeeklyExtract[],
+  monthLabel: string,
+  agenda?: AgendaResult,
+  linking?: LinkingResult,
+): Promise<void> {
+  if (!extracts.length) return;
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', CONTENT_TYPES_XML);
+  zip.file('_rels/.rels', RELS_XML);
+  zip.file('word/_rels/document.xml.rels', DOC_RELS_XML);
+  zip.file('word/settings.xml', SETTINGS_XML);
+  zip.file('word/styles.xml', STYLES_XML);
+  zip.file('word/document.xml', buildMultiWeekDocxXml(inst, extracts, agenda, linking));
+  const blob = await zip.generateAsync({
+    type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `نموذج_٥٤٦_برنامج_تدريب_السرية_شهر_${monthLabel || 'التفصيل'}.docx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

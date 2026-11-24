@@ -529,7 +529,7 @@ def build_document(week_data=None):
           <w:tcPr><w:tcW w:w="3400" w:type="dxa"/></w:tcPr>
           <w:p>
             <w:pPr><w:bidi/><w:jc w:val="left"/><w:spacing w:after="0"/></w:pPr>
-            <w:r><w:rPr><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t>نموذج رقم ٥٤٦ ((هـ . تد رماية))</w:t></w:r>
+            <w:r><w:rPr><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t>نموذج رقم ٥٤٦ ((هـ . تد ))</w:t></w:r>
           </w:p>
         </w:tc>
       </w:tr>

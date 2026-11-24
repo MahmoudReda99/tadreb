@@ -30,12 +30,23 @@ const YEARS = (i: Instructions) => {
   const from = d.getUTCMonth() >= 6 ? y + 1 : y - 1;
   return `${ar(from)} / ${ar(from + 1)}`;
 };
+const PERIOD_AR = (i: Instructions) => {
+  const p = i.period ?? (i.firstWeek >= 53 ? 3 : i.firstWeek >= 27 ? 2 : 1);
+  return p === 3 ? 'الثالثة' : p === 2 ? 'الثانية' : 'الأولى';
+};
 const dayLabel = (d: string, first: boolean) => (first || d.endsWith('-01') ? dm(d) : String(+d.slice(8)));
 
 /* ───────────────────────────── page 1 ───────────────────────────── */
 export function AgendaSheet({ inst, agenda, onInspect = noop }: { inst: Instructions; agenda: AgendaResult; onInspect?: Inspect }) {
   const names = monthNames(inst.startSaturday, inst.weeksPerMonth.length);
   const W = agenda.weeks;
+  const monthEndWeeks = new Set<number>();
+  let accW = 0;
+  for (const n of inst.weeksPerMonth) {
+    accW += n;
+    if (accW > 0 && accW - 1 < W.length) monthEndWeeks.add(W[accW - 1].week);
+  }
+  const mEnd = (week: number) => (monthEndWeeks.has(week) ? 'm-end' : '');
   const order = [6, 0, 1, 2, 3, 4, 5]; // Sat..Fri
   const rowTot = (i: number) => {
     const ds = W.map(w => w.days[i]);
@@ -54,14 +65,14 @@ export function AgendaSheet({ inst, agenda, onInspect = noop }: { inst: Instruct
     <div className="sheet" dir="rtl">
       <Title>
         <div className="u">أجندة التدريب</div>
-        <div className="u">للفترة التدريبية الأولى من العام التدريبى {YEARS(inst)} م</div>
-        <div className="u">{inst.courseName || '—'}</div>
+        <div className="u">للفترة التدريبية {PERIOD_AR(inst)} من العام التدريبى {YEARS(inst)} م</div>
+        {inst.courseName.trim() ? <div className="u">{ar(inst.courseName.trim())}</div> : null}
       </Title>
       <table className="grid agenda">
         <thead>
           <tr>
             <th className="corner" rowSpan={2}><span className="c1">الشهر</span><span className="c2">اليوم</span></th>
-            {inst.weeksPerMonth.map((n, m) => <th key={m} colSpan={n} className="mh">{names[m]}</th>)}
+            {inst.weeksPerMonth.map((n, m) => <th key={m} colSpan={n} className="mh m-end">{names[m]}</th>)}
             <th colSpan={3} className="mh">الإجمالى</th>
           </tr>
           <tr>
@@ -69,7 +80,7 @@ export function AgendaSheet({ inst, agenda, onInspect = noop }: { inst: Instruct
               const k = hdrKind(w.week);
               // prep / reserve / ops weeks keep their own colour; every other week takes the colour of its level (فرد / طاقم / مركز)
               const style = k ? { background: KIND_COLORS[k].bg, color: KIND_COLORS[k].fg } : w.level ? { background: LEVEL_BG[w.level], color: '#111' } : undefined;
-              return <th key={w.week} style={style}>{ar(w.week)}</th>;
+              return <th key={w.week} className={mEnd(w.week) || undefined} style={style}>{ar(w.week)}</th>;
             })}
             <th>ن</th><th className="r">ل</th><th>ج</th>
           </tr>
@@ -84,7 +95,7 @@ export function AgendaSheet({ inst, agenda, onInspect = noop }: { inst: Instruct
                   const d = w.days[i];
                   const c = KIND_COLORS[d.kind];
                   return (
-                    <td key={w.week} className="daycell tap" style={{ background: c.bg, color: c.fg }} onClick={() => onInspect(auditDay(d))}
+                    <td key={w.week} className={`daycell tap ${mEnd(w.week)}`.trim()} style={{ background: c.bg, color: c.fg }} onClick={() => onInspect(auditDay(d))}
                       role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onInspect(auditDay(d)); }}>
                       {ar(dayLabel(d.date, w.week === 1 && i < 2))}
                     </td>
@@ -108,7 +119,7 @@ export function AgendaSheet({ inst, agenda, onInspect = noop }: { inst: Instruct
           {(['day', 'night', 'total'] as const).map(what => (
             <tr key={what}>
               <th className="rowh">{what === 'day' ? 'نهاراً' : what === 'night' ? 'ليلاً' : 'الإجمالى'}</th>
-              {W.map(w => <td key={w.week} className={what === 'night' ? 'r' : undefined}><Num v={what === 'total' ? w.total : w[what]} on={weekSum(w, what)} /></td>)}
+              {W.map(w => <td key={w.week} className={[what === 'night' ? 'r' : '', mEnd(w.week)].filter(Boolean).join(' ') || undefined}><Num v={what === 'total' ? w.total : w[what]} on={weekSum(w, what)} /></td>)}
               {what === 'day' ? (
                 <>
                   <td className="gt">
@@ -142,7 +153,7 @@ export function AgendaSheet({ inst, agenda, onInspect = noop }: { inst: Instruct
             <tr key={b.label}>
               <th className="rowh">{b.label}</th>
               {W.map(w => (
-                <td key={w.week}><Num v={b.f(w)} on={tap(`${b.label} — أسبوع ${ar(w.week)}`, 'مجموع هذه الساعات فى أيام الأسبوع',
+                <td key={w.week} className={mEnd(w.week) || undefined}><Num v={b.f(w)} on={tap(`${b.label} — أسبوع ${ar(w.week)}`, 'مجموع هذه الساعات فى أيام الأسبوع',
                   w.days.map(d => ({ label: `${DAYS_AR[d.dow]} ${dm(d.date)}`, value: d[b.key] })))} /></td>
               ))}
               <td colSpan={3} className="gt"><Num v={b.tot} on={tap(`${b.label} — إجمالى الفترة`, 'مجموع الأسابيع', W.map(w => ({ label: `أسبوع ${ar(w.week)}`, value: b.f(w) })))} /></td>
@@ -359,7 +370,7 @@ export function LinkingSheet({ inst, agenda, dist, link, onInspect = noop }: { i
     <div className="sheet" dir="rtl">
       <Title>
         <div className="u">جدول ربط الساعات والموضوعات (نهارى / ليلى)</div>
-        <div className="u">عن الفترة التدريبية الأولى من العام التدريبى {YEARS(inst)} م</div>
+        <div className="u">عن الفترة التدريبية {PERIOD_AR(inst)} من العام التدريبى {YEARS(inst)} م</div>
       </Title>
       <table className="grid link">
         <thead>
@@ -482,7 +493,7 @@ export function MonthDetailSheet({ inst, dist, link, onInspect = noop }: { inst:
     <div className="sheet" dir="rtl">
       <Title>
         <div className="u">جدول تفصيل الساعات والموضوعات على أسابيع شهر ( {monthName} )</div>
-        <div className="u">عن الفترة التدريبية الأولى من العام التدريبى {YEARS(inst)} م</div>
+        <div className="u">عن الفترة التدريبية {PERIOD_AR(inst)} من العام التدريبى {YEARS(inst)} م</div>
       </Title>
       <table className="grid link">
         <thead>
@@ -576,7 +587,7 @@ export function WeeklySheet({ inst, ex, onInspect = noop }: { inst: Instructions
       </div>
       <div className="sheet-title c">
         <div className="u">مستخرج الموضوعات والساعات عن الاسبوع رقم ( {ar(ex.week)} )</div>
-        <div className="u">من الفترة التدريبية الأولى للعام التدريبى {YEARS(inst)}</div>
+        <div className="u">من الفترة التدريبية {PERIOD_AR(inst)} للعام التدريبى {YEARS(inst)}</div>
         <div className="u">خلال المدة من {ar(ex.from.split('-').reverse().join('/'))} إلى {ar(ex.to.split('-').reverse().join('/'))}</div>
       </div>
       <table className="grid weekly">
@@ -752,7 +763,7 @@ export function TrainingProgramSheet({
           <div style={{ fontWeight: 700 }}>- ١٥٥ -</div>
         </div>
         <div style={{ textAlign: 'left', fontSize: '11px', fontWeight: 600 }}>
-          نموذج رقم ٥٤٦ ((هـ . تد رماية))
+          نموذج رقم ٥٤٦ ((هـ . تد ))
         </div>
       </div>
 

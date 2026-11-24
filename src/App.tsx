@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Instructions } from './engine/types';
+import type { Instructions, WeeklyExtract } from './engine/types';
 import { calculateAgenda } from './engine/agenda';
 import { calculateDistribution } from './engine/distribution';
 import { calculateLinking } from './engine/linking';
@@ -13,7 +13,7 @@ import { Review } from './ui/Review';
 import { Inspector } from './ui/Inspector';
 import { AgendaSheet, DistributionSheet, LinkingSheet, MonthDetailSheet, WeeklySheet, TrainingProgramSheet } from './ui/Sheets';
 import { ExportPages, type Model } from './ui/ExportPages';
-import { downloadProgramDocx } from './export/programDocx';
+import { downloadMonthProgramsDocx, downloadProgramDocx } from './export/programDocx';
 import type { Audit } from './engine/audit';
 import { ar } from './ui/format';
 
@@ -69,12 +69,20 @@ export default function App() {
       const agenda = calculateAgenda(inst);
       const dist = calculateDistribution(inst, agenda);
       const link = calculateLinking(inst, agenda, dist);
-      return { inst, agenda, dist, link, ex: calculateWeekly(agenda, link, inst.selectedWeek, inst) };
+      const sm = Math.min(inst.selectedMonth, Math.max(0, link.weeks.length - 1));
+      const weekNums = link.weeks[sm]?.weekNumbers ?? [];
+      const monthExtracts = weekNums
+        .map(w => calculateWeekly(agenda, link, w, inst))
+        .filter((x): x is WeeklyExtract => x !== null);
+      return { inst, agenda, dist, link, ex: calculateWeekly(agenda, link, inst.selectedWeek, inst), monthExtracts };
     } catch (e) { console.error(e); return null; }
   }, [inst, view]);
 
   function open(i: Instructions, id?: string) {
-    setInst(i); setConf({}); setNotes([]); setRawText(''); setConfirmed(new Set()); setPid(id ?? uid()); setView('review');
+    const names = monthNames(i.startSaturday, i.weeksPerMonth.length);
+    const janIdx = names.indexOf('يناير');
+    const next = id ? i : { ...i, selectedMonth: janIdx >= 0 ? janIdx : 0 };
+    setInst(next); setConf({}); setNotes([]); setRawText(''); setConfirmed(new Set()); setPid(id ?? uid()); setView('review');
   }
   async function accept() {
     await saveProject({ id: pid, name: inst.courseName || 'مشروع بدون اسم', instructions: inst, updatedAt: Date.now() }).catch(() => {});
@@ -139,53 +147,101 @@ export default function App() {
 
       {view === 'results' && (
         <main className="results">
-          <nav className="tabs" role="tablist">
-            {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
-          </nav>
+          <div className="tabs-bar">
+            <nav className="tabs" role="tablist">
+              {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
+            </nav>
+            <div className="tabs-export">
+              <button className="btn primary" onClick={doExport} disabled={exporting || !model}>{exporting ? 'جارى التصدير…' : 'تصدير PDF'}</button>
+              <button className="btn" onClick={() => window.print()}>طباعة</button>
+            </div>
+          </div>
           <div className="actions">
-            <button className="btn primary" onClick={doExport} disabled={exporting || !model}>{exporting ? 'جارى التصدير…' : 'تصدير PDF'}</button>
-            <button className="btn" onClick={() => window.print()}>طباعة</button>
-            <button className="btn ghost" onClick={() => setView('review')}>تعديل التعليمات</button>
-            {tab === 'month' && (
-              <label className="sel">شهر التفصيل <select value={inst.selectedMonth} onChange={e => setInst({ ...inst, selectedMonth: +e.target.value })}>
-                {monthNames(inst.startSaturday, inst.weeksPerMonth.length).map((n, i) => <option key={i} value={i}>{n}</option>)}</select></label>
+            <button className="btn btn-edit-inst" onClick={() => setView('review')}>✎ تعديل التعليمات</button>
+            {(tab === 'month' || tab === 'week' || tab === 'program') && (
+              <label className="sel">
+                شهر التفصيل
+                <select value={inst.selectedMonth} onChange={e => setInst({ ...inst, selectedMonth: +e.target.value })}>
+                  {monthNames(inst.startSaturday, inst.weeksPerMonth.length).map((n, i) => <option key={i} value={i}>{n}</option>)}
+                </select>
+                {model && <span className="month-weeks-pill">{ar(model.monthExtracts.length)} أسابيع</span>}
+              </label>
             )}
-            {(tab === 'week' || tab === 'program') && (
-              <label className="sel">الأسبوع <select value={inst.selectedWeek} onChange={e => setInst({ ...inst, selectedWeek: +e.target.value })}>
-                {Array.from({ length: inst.totalWeeks }, (_, i) => i + inst.firstWeek).map(w => <option key={w} value={w}>{ar(w)}</option>)}</select></label>
-            )}
-            {tab === 'program' && model?.ex && (
-              <button className="btn" onClick={() => downloadProgramDocx(inst, model.ex!, model.agenda, model.link)}>تحميل Word (.docx)</button>
+            {tab === 'program' && model && (model.monthExtracts.length > 0 || model.ex) && (
+              <button
+                className="btn"
+                onClick={() =>
+                  model.monthExtracts.length > 0
+                    ? downloadMonthProgramsDocx(inst, model.monthExtracts, monthLabel, model.agenda, model.link)
+                    : downloadProgramDocx(inst, model.ex!, model.agenda, model.link)
+                }
+              >
+                تحميل Word 
+              </button>
             )}
           </div>
           {error && <div className="err" role="alert">{error}</div>}
           {!model ? <p className="err">تعذّر الحساب — راجع التعليمات.</p> : (
             <>
-              <div className="strip">
-                <span>الإجمالى <b>{ar(model.agenda.total)}</b></span><span>نهارى <b>{ar(model.agenda.day)}</b></span><span>ليلى <b className="red">{ar(model.agenda.night)}</b></span>
-                <span>لياقة <b>{ar(model.agenda.fitness)}</b></span><span>تعليم منضم <b>{ar(model.agenda.education)}</b></span><span>أمن حربى <b>{ar(model.agenda.security)}</b></span>
-                {!(model.agenda.checks.ok && model.dist.checks.ok && model.link.checks.ok) && (
-                  <span className="bad">✘ توجد فحوص غير مطابقة</span>
-                )}
-                {tab === 'month' && <span>التفصيل: {monthLabel}</span>}
+              {tab === 'agenda' && (
+                <div className="strip">
+                  <span>الإجمالى <b>{ar(model.agenda.total)}</b></span><span>نهارى <b>{ar(model.agenda.day)}</b></span><span>ليلى <b className="red">{ar(model.agenda.night)}</b></span>
+                  <span>لياقة <b>{ar(model.agenda.fitness)}</b></span><span>تعليم منضم <b>{ar(model.agenda.education)}</b></span><span>أمن حربى <b>{ar(model.agenda.security)}</b></span>
+                  {!(model.agenda.checks.ok && model.dist.checks.ok && model.link.checks.ok) && (
+                    <span className="bad">✘ توجد فحوص غير مطابقة</span>
+                  )}
+                </div>
+              )}
+              {tab !== 'agenda' && !(model.agenda.checks.ok && model.dist.checks.ok && model.link.checks.ok) && (
+                <div className="err" role="alert">✘ توجد فحوص غير مطابقة — راجع التعليمات أو الأجندة.</div>
+              )}
+              <div className="results-tip" role="note">
+                <span className="results-tip-icon" aria-hidden="true">💡</span>
+                <span>{tab === 'program' ? 'اضغط على اسم الدرس بجانب أى موضوع لاختيار درس آخر من المنهج.' : 'اضغط على أى رقم داخل الجدول لعرض خطوات حسابه بالتفصيل.'}</span>
               </div>
-              <p className="hint">{tab === 'program' ? 'اضغط على اسم الدرس بجانب أى موضوع لاختيار درس آخر من المنهج.' : 'اضغط أى رقم لعرض خطوات حسابه.'}</p>
               {tab === 'agenda' && <Paper><AgendaSheet inst={inst} agenda={model.agenda} onInspect={setAudit} /></Paper>}
               {tab === 'dist' && <Paper><DistributionSheet inst={inst} agenda={model.agenda} dist={model.dist} onInspect={setAudit} /></Paper>}
               {tab === 'link' && <Paper><LinkingSheet inst={inst} agenda={model.agenda} dist={model.dist} link={model.link} onInspect={setAudit} /></Paper>}
               {tab === 'month' && <Paper><MonthDetailSheet inst={inst} agenda={model.agenda} dist={model.dist} link={model.link} onInspect={setAudit} /></Paper>}
-              {tab === 'week' && <Paper><WeeklySheet inst={inst} ex={model.ex} onInspect={setAudit} /></Paper>}
+              {tab === 'week' && (
+                <div className="weekly-stack">
+                  {model.monthExtracts.length > 0 ? (
+                    model.monthExtracts.map(wex => (
+                      <Paper key={wex.week}><WeeklySheet inst={inst} ex={wex} onInspect={setAudit} /></Paper>
+                    ))
+                  ) : (
+                    <Paper><WeeklySheet inst={inst} ex={model.ex} onInspect={setAudit} /></Paper>
+                  )}
+                </div>
+              )}
               {tab === 'program' && (
-                <Paper>
-                  <TrainingProgramSheet
-                    inst={inst}
-                    ex={model.ex}
-                    agenda={model.agenda}
-                    link={model.link}
-                    onInspect={setAudit}
-                    onUpdateInst={updateInstResults}
-                  />
-                </Paper>
+                <div className="weekly-stack">
+                  {model.monthExtracts.length > 0 ? (
+                    model.monthExtracts.map(wex => (
+                      <Paper key={`prog-${wex.week}`}>
+                        <TrainingProgramSheet
+                          inst={inst}
+                          ex={wex}
+                          agenda={model.agenda}
+                          link={model.link}
+                          onInspect={setAudit}
+                          onUpdateInst={updateInstResults}
+                        />
+                      </Paper>
+                    ))
+                  ) : (
+                    <Paper>
+                      <TrainingProgramSheet
+                        inst={inst}
+                        ex={model.ex}
+                        agenda={model.agenda}
+                        link={model.link}
+                        onInspect={setAudit}
+                        onUpdateInst={updateInstResults}
+                      />
+                    </Paper>
+                  )}
+                </div>
               )}
               <div className="print-root"><ExportPages m={model} /></div>
             </>
