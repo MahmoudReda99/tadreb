@@ -55,6 +55,6 @@ export function weeksByCalendar(startSaturday: DateStr, totalWeeks: number): num
 }
 
 export function monthNames(startSaturday: DateStr, count: number): string[] {
-  const first = weekCalendarMonth(startSaturday);
+  const first = /^\d{4}-\d{2}-\d{2}$/.test(startSaturday) ? weekCalendarMonth(startSaturday) : 0;
   return Array.from({ length: count }, (_, i) => MONTHS_AR[(first + i) % 12]);
 }

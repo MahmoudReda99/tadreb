@@ -599,7 +599,7 @@ function subjectCellXml(w: number, slot: ProgramSlot, sz = 14, red = false, thic
   </w:tc>`;
 }
 
-function buildWeekBodyXml(inst: Instructions, ex: WeeklyExtract, schedule?: CourseLessonSchedule | null): string {
+export function buildWeekBodyXml(inst: Instructions, ex: WeeklyExtract, schedule?: CourseLessonSchedule | null): string {
   const weekProgram = buildWeekProgram(inst, ex, schedule);
   const rows: string[] = [];
 
@@ -822,7 +822,7 @@ function buildWeekBodyXml(inst: Instructions, ex: WeeklyExtract, schedule?: Cour
     </w:tbl>`;
 }
 
-const SECT_PR_XML = `    <!-- Page Setup: A4 Portrait, tight margins for 1-page fit -->
+export const SECT_PR_XML = `    <!-- Page Setup: A4 Portrait, tight margins for 1-page fit -->
     <w:sectPr>
       <w:pgSz w:w="11906" w:h="16838" w:orient="portrait"/>
       <w:pgMar w:top="500" w:right="600" w:bottom="400" w:left="600" w:header="400" w:footer="400" w:gutter="0"/>
@@ -857,7 +857,7 @@ export function buildMultiWeekDocxXml(
   return wrapDocumentXml(bodies.join(`\n${pageBreak}\n`));
 }
 
-const CONTENT_TYPES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+export const CONTENT_TYPES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
@@ -866,23 +866,23 @@ const CONTENT_TYPES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"
   <Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>
 </Types>`;
 
-const RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+export const RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
 </Relationships>`;
 
-const DOC_RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+export const DOC_RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>
 </Relationships>`;
 
-const SETTINGS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+export const SETTINGS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:evenAndOddHeaders/>
 </w:settings>`;
 
-const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+export const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:docDefaults>
     <w:rPrDefault>

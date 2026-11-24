@@ -8,6 +8,7 @@ export interface Model {
   link: LinkingResult;
   ex: WeeklyExtract | null;
   monthExtracts: WeeklyExtract[];
+  showMonthInLink?: boolean;
 }
 
 /** the official pages, A4 landscape, white background, black borders — one page each */
@@ -16,7 +17,7 @@ export function ExportPages({ m }: { m: Model }) {
     <>
       <div className="paper"><AgendaSheet inst={m.inst} agenda={m.agenda} /></div>
       <div className="paper"><DistributionSheet inst={m.inst} agenda={m.agenda} dist={m.dist} /></div>
-      <div className="paper"><LinkingSheet inst={m.inst} agenda={m.agenda} dist={m.dist} link={m.link} /></div>
+      <div className="paper"><LinkingSheet inst={m.inst} agenda={m.agenda} dist={m.dist} link={m.link} showMonthDetail={m.showMonthInLink} /></div>
       <div className="paper"><MonthDetailSheet inst={m.inst} agenda={m.agenda} dist={m.dist} link={m.link} /></div>
       {m.monthExtracts.length > 0 ? (
         m.monthExtracts.map(wex => (

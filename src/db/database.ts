@@ -20,6 +20,7 @@ export const db = new AppDB();
 export const listProjects = () => db.projects.orderBy('updatedAt').reverse().toArray();
 export const saveProject = (p: Project) => db.projects.put({ ...p, updatedAt: Date.now() });
 export const removeProject = (id: string) => db.projects.delete(id);
+export const clearProjects = () => db.projects.clear();
 
 export const exportJson = (i: Instructions) => JSON.stringify({ format: 'tadreeb-instructions', version: 1, instructions: i }, null, 2);
 export function importJson(text: string): Instructions {

@@ -216,7 +216,7 @@ function WeekFieldsInput({
 
   return (
     <div className="week-fields">
-      <div className="week-fields-grid">
+      <div className={`week-fields-grid ${slots.length === 1 ? 'is-single' : ''}`.trim()}>
         {slots.map((val, idx) => {
           const invalid = isOutOfRange(parseNum(val));
           return (
@@ -282,10 +282,12 @@ function HolidayList({
   value,
   onCommit,
   ctx,
+  yearRange,
 }: {
   value: (string | DateRange)[];
   onCommit: (v: (string | DateRange)[]) => void;
   ctx: Ctx2;
+  yearRange?: [number, number];
 }) {
   const seq = useRef(0);
   const [rows, setRows] = useState<HRow[]>(() =>
@@ -384,6 +386,16 @@ function HolidayList({
           {r.from && r.to && r.to < r.from && (
             <small className="warn">تاريخ النهاية قبل البداية — سيُحسب يوماً واحداً.</small>
           )}
+          {yearRange && (() => {
+            const badFrom = r.from && /^\d{4}-/.test(r.from) && (+r.from.slice(0, 4) < yearRange[0] || +r.from.slice(0, 4) > yearRange[1]);
+            const badTo = r.to && /^\d{4}-/.test(r.to) && (+r.to.slice(0, 4) < yearRange[0] || +r.to.slice(0, 4) > yearRange[1]);
+            if (!badFrom && !badTo) return null;
+            return (
+              <small className="week-err" role="alert">
+                ⚠️ تاريخ الأجازة خارج نطاق العام التدريبى ({toArabic(String(yearRange[0]))} / {toArabic(String(yearRange[1]))}) — يرجى اختيار تاريخ ضمن العام التدريبى.
+              </small>
+            );
+          })()}
         </div>
       ))}
 
@@ -431,12 +443,12 @@ interface DeleteTarget {
 
 interface Ctx { conf: Record<string, number>; low: (k: string) => boolean; confirm: (k: string) => void }
 const FieldCtx = createContext<Ctx>({ conf: {}, low: () => false, confirm: () => {} });
-function Field({ k, label, children, wide, span2, hint }: { k: string; label: string; children: ReactNode; wide?: boolean; span2?: boolean; hint?: string }) {
+function Field({ k, label, children, wide, span2, invalid, hint }: { k: string; label: string; children: ReactNode; wide?: boolean; span2?: boolean; invalid?: boolean; hint?: string }) {
   const { conf, low, confirm } = useContext(FieldCtx);
   const c = conf[k];
   const isLow = low(k);
   return (
-    <div className={'fld' + (isLow ? ' low' : '') + (wide ? ' wide' : '') + (span2 ? ' span2' : '')}>
+    <div className={'fld' + (isLow ? ' low' : '') + (wide ? ' wide' : '') + (span2 ? ' span2' : '') + (invalid ? ' is-invalid' : '')}>
       <label>{toArabic(label)}{c !== undefined && c < LOW && (
         <span className="badge">{isLow ? `راجِع · ${Math.round(c * 100)}٪` : '✔ مؤكَّد'}</span>
       )}</label>
@@ -448,14 +460,22 @@ function Field({ k, label, children, wide, span2, hint }: { k: string; label: st
 }
 
 export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConfirmField, onAccept, onBack }: Props) {
-  const names = useMemo(() => monthNames(inst.startSaturday, inst.weeksPerMonth.length), [inst.startSaturday, inst.weeksPerMonth]);
+  const hasStart = /^\d{4}-\d{2}-\d{2}$/.test(inst.startSaturday);
+  const names = useMemo(
+    () =>
+      hasStart
+        ? monthNames(inst.startSaturday, inst.weeksPerMonth.length)
+        : Array.from({ length: inst.weeksPerMonth.length }, (_, i) => `الشهر ${toArabic(String(i + 1))}`),
+    [hasStart, inst.startSaturday, inst.weeksPerMonth],
+  );
   const low = (k: string) => (conf[k] ?? 1) < LOW && !confirmed.has(k);
   const pending = Object.keys(conf).filter(low);
+  const parsedYearsForCtx = (toLatin(inst.yearLabel ?? '').match(/\d{4}/g) ?? []).map(Number);
   const ctx: Ctx2 = {
-    from: inst.startSaturday,
-    to: addDays(inst.startSaturday, inst.totalWeeks * 7 - 1),
+    from: hasStart ? inst.startSaturday : (parsedYearsForCtx[0] ? `${parsedYearsForCtx[0]}-01-01` : undefined),
+    to: hasStart ? addDays(inst.startSaturday, inst.totalWeeks * 7 - 1) : undefined,
     yearLabel: inst.yearLabel,
-    startSaturday: inst.startSaturday,
+    startSaturday: hasStart ? inst.startSaturday : undefined,
   };
   const set = <K extends keyof Instructions>(k: K, v: Instructions[K], key: string = k as string) => onChange({ ...inst, [k]: v }, key);
 
@@ -551,10 +571,72 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
   const targetMain = inst.pcts.mainPct;
   const targetGen = 100 - targetMain;
 
+  const [triedSubmit, setTriedSubmit] = useState(false);
+  const [showSubmitToast, setShowSubmitToast] = useState(false);
+  const toastTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+  }, []);
+
   const periodNum = inst.period ?? (inst.firstWeek >= 53 ? 3 : inst.firstWeek >= 27 ? 2 : 1);
   const periodName = periodNum === 3 ? 'الثالثة' : periodNum === 2 ? 'الثانية' : 'الأولى';
   const periodMinWeek = inst.firstWeek;
   const periodMaxWeek = inst.firstWeek + inst.totalWeeks - 1;
+
+  const parsedYears = (toLatin(inst.yearLabel ?? '').match(/\d{4}/g) ?? []).map(Number);
+  const tyStart = parsedYears[0] ?? null;
+  const tyEnd = parsedYears[1] ?? (tyStart !== null ? tyStart + 1 : null);
+  const tyRange: [number, number] | undefined = tyStart !== null && tyEnd !== null ? [tyStart, tyEnd] : undefined;
+  const tyLabelAr = tyRange ? `${toArabic(String(tyRange[0]))} / ${toArabic(String(tyRange[1]))}` : '';
+  const yearOfIso = (iso: string | null | undefined) => (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? Number(iso.slice(0, 4)) : null);
+  const inTrainingYear = (iso: string | null | undefined, allowWeekEnd = false) => {
+    if (!tyRange) return true;
+    const y = yearOfIso(iso);
+    if (y === null) return true;
+    if (y >= tyRange[0] && y <= tyRange[1]) return true;
+    if (allowWeekEnd && iso) {
+      const endY = yearOfIso(addDays(iso, 6));
+      if (endY !== null && endY >= tyRange[0] && endY <= tyRange[1]) return true;
+    }
+    return false;
+  };
+
+  const startSatOutOfYear = Boolean(inst.startSaturday) && !inTrainingYear(inst.startSaturday, true);
+  const ramadanOutOfYear = Boolean(inst.ramadan) && (!inTrainingYear(inst.ramadan!.from) || !inTrainingYear(inst.ramadan!.to));
+  const holidaysOutOfYear = inst.holidays.some(h =>
+    typeof h === 'string' ? !inTrainingYear(h) : (!inTrainingYear(h.from) || !inTrainingYear(h.to)),
+  );
+  const badDateCards = [
+    startSatOutOfYear ? 'تاريخ أول سبت في الفترة' : null,
+    ramadanOutOfYear ? 'شهر رمضان' : null,
+    holidaysOutOfYear ? 'الأجازات الرسمية' : null,
+  ].filter((x): x is string => x !== null);
+  const allDatesOk = badDateCards.length === 0;
+
+  const missingCourseName = !inst.courseName.trim();
+  const missingYearLabel = tyStart === null;
+  const missingStartSat = !hasStart;
+  const missingPrepWeeks = inst.prepWeeks.length === 0;
+  const missingOpsWeeks = inst.opsWeeks.length === 0;
+  const missingReserveWeeks = inst.reserveWeeks.length === 0;
+  const missingCampWeeks = inst.campWeeks.length === 0;
+  const missingMarchSec = names.some(
+    (_, m) => (inst.marchSecurityByMonth[m]?.[0] ?? 0) + (inst.marchSecurityByMonth[m]?.[1] ?? 0) === 0,
+  );
+  const weeksPerMonthSum = inst.weeksPerMonth.reduce((a, b) => a + b, 0);
+  const badWeeksPerMonthSum = weeksPerMonthSum !== inst.totalWeeks;
+  const missingFields = [
+    missingCourseName ? 'الدورة / الوحدة' : null,
+    missingYearLabel ? 'العام التدريبى' : null,
+    missingStartSat ? 'تاريخ أول سبت في الفترة' : null,
+    missingPrepWeeks ? 'أسابيع الفترة التحضيرية' : null,
+    missingOpsWeeks ? 'أسابيع مهام العمليات' : null,
+    missingReserveWeeks ? 'أسابيع الاحتياط' : null,
+    missingCampWeeks ? 'أسابيع المعسكر الليلى' : null,
+    missingMarchSec ? 'طابور السير + الأمن الحربى لكل شهر' : null,
+    badWeeksPerMonthSum ? `عدد أسابيع كل شهر (المجموع الحالى ${toArabic(String(weeksPerMonthSum))} ويجب أن يساوى ${toArabic(String(inst.totalWeeks))})` : null,
+  ].filter((x): x is string => x !== null);
 
   const badWeekCards = [
     { label: 'أسابيع الفترة التحضيرية', bad: inst.prepWeeks.filter(w => w < periodMinWeek || w > periodMaxWeek) },
@@ -568,17 +650,39 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
   const genOk = genSubjectsSum === targetGen;
   const totalOk = totalSubjectsSum === 100;
   const allPctsOk = mainOk && genOk && totalOk;
-  const canAccept = pending.length === 0 && allPctsOk && allWeeksOk;
+  const liveValid = pending.length === 0 && allPctsOk && allWeeksOk && allDatesOk;
+  const canAccept = liveValid && missingFields.length === 0;
+
+  const handleConfirmClick = () => {
+    if (!canAccept) {
+      setTriedSubmit(true);
+      setShowSubmitToast(true);
+      if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = window.setTimeout(() => setShowSubmitToast(false), 3000);
+      requestAnimationFrame(() => {
+        const firstInvalid = document.querySelector<HTMLElement>('.fld.is-invalid');
+        firstInvalid?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      return;
+    }
+    onAccept();
+  };
 
   return (
     <FieldCtx.Provider value={{ conf, low, confirm: onConfirmField }}>
     <div className="panel">
-      <div className="bar"><button className="btn ghost" onClick={onBack}>← رجوع</button><h2>مراجعة التعليمات</h2></div>
+      <div className="bar"><h2>مراجعة التعليمات</h2><button className="btn ghost" onClick={onBack}>رجوع ←</button></div>
       {notes.length > 0 && <ul className="notes-list">{notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
       {pending.length > 0 && <p className="hint">عدّل الحقول المظللة أو اضغط «القيمة صحيحة» قبل الحساب.</p>}
       <div className="form">
-        <Field k="courseName" label="الدورة / الوحدة" wide><input value={inst.courseName} onChange={e => set('courseName', e.target.value)} /></Field>
-        <Field k="yearLabel" label="العام التدريبى"><TrainingYearInput value={inst.yearLabel} onCommit={v => set('yearLabel', v)} /></Field>
+        <Field k="courseName" label="الدورة / الوحدة" wide invalid={triedSubmit && missingCourseName}>
+          <input value={inst.courseName} placeholder="مثال: الدورة المتقدمة رقم (١١١) — الكتيبة الأولى" onChange={e => set('courseName', e.target.value)} />
+          {triedSubmit && missingCourseName && <small className="week-err" role="alert">⚠️ يرجى إدخال اسم الدورة / الوحدة.</small>}
+        </Field>
+        <Field k="yearLabel" label="العام التدريبى" invalid={triedSubmit && missingYearLabel}>
+          <TrainingYearInput value={inst.yearLabel} onCommit={v => set('yearLabel', v)} />
+          {triedSubmit && missingYearLabel && <small className="week-err" role="alert">⚠️ يرجى إدخال العام التدريبى (مثال: ٢٠٢٥).</small>}
+        </Field>
         <Field k="firstWeek" label="الفترة التدريبية" hint={`نطاق الأسابيع: من ${periodMinWeek} إلى ${periodMaxWeek}`}>
           <select
             className="maint-select"
@@ -597,37 +701,65 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
           </select>
         </Field>
         <Field k="totalWeeks" label="عدد أسابيع الفترة"><NumInput value={inst.totalWeeks} min={1} max={60} onCommit={n => set('totalWeeks', n)} label="عدد أسابيع الفترة" /></Field>
-        <Field k="startSaturday" label="تاريخ أول سبت في الفترة">
+        <Field k="startSaturday" label="تاريخ أول سبت في الفترة" invalid={startSatOutOfYear || (triedSubmit && missingStartSat)}>
           <DateInput value={inst.startSaturday} ctx={ctx} onCommit={d => d && set('startSaturday', d)} label="تاريخ أول سبت في الفترة" />
-          {dowOf(inst.startSaturday) !== 6 && <small className="warn">هذا اليوم {WEEKDAY(inst.startSaturday)} وليس سبتاً — راجع التاريخ.</small>}
+          {hasStart && dowOf(inst.startSaturday) !== 6 && <small className="warn">هذا اليوم {WEEKDAY(inst.startSaturday)} وليس سبتاً — راجع التاريخ.</small>}
+          {startSatOutOfYear && (
+            <small className="week-err" role="alert">
+              ⚠️ تاريخ أول سبت خارج نطاق العام التدريبى ({tyLabelAr}) — يرجى اختيار تاريخ ضمن العام التدريبى.
+            </small>
+          )}
+          {triedSubmit && missingStartSat && <small className="week-err" role="alert">⚠️ يرجى اختيار تاريخ أول سبت فى الفترة.</small>}
         </Field>
-        <Field k="prepWeeks" label="أسابيع الفترة التحضيرية"><WeekFieldsInput value={inst.prepWeeks} onCommit={v => set('prepWeeks', v)} min={periodMinWeek} max={periodMaxWeek} periodLabel={periodName} /></Field>
-        <Field k="opsWeeks" label="أسابيع مهام العمليات"><WeekFieldsInput value={inst.opsWeeks} onCommit={v => set('opsWeeks', v)} min={periodMinWeek} max={periodMaxWeek} periodLabel={periodName} /></Field>
-        <Field k="reserveWeeks" label="أسابيع الاحتياط"><WeekFieldsInput value={inst.reserveWeeks} onCommit={v => set('reserveWeeks', v)} min={periodMinWeek} max={periodMaxWeek} periodLabel={periodName} /></Field>
-        <Field k="campWeeks" label="أسابيع المعسكر الليلى"><WeekFieldsInput value={inst.campWeeks} onCommit={v => set('campWeeks', v)} min={periodMinWeek} max={periodMaxWeek} periodLabel={periodName} /></Field>
+        <Field k="prepWeeks" label="أسابيع الفترة التحضيرية" invalid={triedSubmit && missingPrepWeeks}>
+          <WeekFieldsInput value={inst.prepWeeks} onCommit={v => set('prepWeeks', v)} min={periodMinWeek} max={periodMaxWeek} periodLabel={periodName} />
+          {triedSubmit && missingPrepWeeks && <small className="week-err" role="alert">⚠️ يرجى إدخال أسابيع الفترة التحضيرية.</small>}
+        </Field>
+        <Field k="opsWeeks" label="أسابيع مهام العمليات" invalid={triedSubmit && missingOpsWeeks}>
+          <WeekFieldsInput value={inst.opsWeeks} onCommit={v => set('opsWeeks', v)} min={periodMinWeek} max={periodMaxWeek} periodLabel={periodName} defaultCount={1} />
+          {triedSubmit && missingOpsWeeks && <small className="week-err" role="alert">⚠️ يرجى إدخال أسابيع مهام العمليات.</small>}
+        </Field>
+        <Field k="reserveWeeks" label="أسابيع الاحتياط" invalid={triedSubmit && missingReserveWeeks}>
+          <WeekFieldsInput value={inst.reserveWeeks} onCommit={v => set('reserveWeeks', v)} min={periodMinWeek} max={periodMaxWeek} periodLabel={periodName} defaultCount={1} />
+          {triedSubmit && missingReserveWeeks && <small className="week-err" role="alert">⚠️ يرجى إدخال أسابيع الاحتياط.</small>}
+        </Field>
+        <Field k="campWeeks" label="أسابيع المعسكر الليلى" invalid={triedSubmit && missingCampWeeks}>
+          <WeekFieldsInput value={inst.campWeeks} onCommit={v => set('campWeeks', v)} min={periodMinWeek} max={periodMaxWeek} periodLabel={periodName} />
+          {triedSubmit && missingCampWeeks && <small className="week-err" role="alert">⚠️ يرجى إدخال أسابيع المعسكر الليلى.</small>}
+        </Field>
         <Field k="maintenanceDow" label="يوم الصيانة الأسبوعى" hint="اختر اليوم">
           <select className="maint-select" value={inst.maintenanceDow ?? 1} onChange={e => set('maintenanceDow', Number(e.target.value))}>
             <option value={1}>الإثنين</option>
             <option value={2}>الثلاثاء</option>
           </select>
         </Field>
-        <Field k="ramadan" label="شهر رمضان (من / إلى)" hint="اتركهما فارغين إن لم يوجد" span2>
+        <Field k="ramadan" label="شهر رمضان (من / إلى)" hint="اتركهما فارغين إن لم يوجد" span2 invalid={ramadanOutOfYear}>
           <div className="two">
             <div><small>من</small><DateInput value={inst.ramadan?.from} ctx={ctx} optional onCommit={d => set('ramadan', d ? { from: d, to: inst.ramadan?.to && inst.ramadan.to >= d ? inst.ramadan.to : d } : null, 'ramadan')} label="رمضان من" /></div>
             <div><small>إلى</small><DateInput value={inst.ramadan?.to} ctx={ctx} optional onCommit={d => set('ramadan', inst.ramadan ? { ...inst.ramadan, to: d ?? inst.ramadan.from } : d ? { from: d, to: d } : null, 'ramadan')} label="رمضان إلى" /></div>
           </div>
+          {ramadanOutOfYear && (
+            <small className="week-err" role="alert">
+              ⚠️ تواريخ شهر رمضان خارج نطاق العام التدريبى ({tyLabelAr}) — يرجى اختيار تواريخ ضمن العام التدريبى.
+            </small>
+          )}
         </Field>
-        <Field k="holidays" label="الأجازات الرسمية" wide>
-          <HolidayList value={inst.holidays} ctx={ctx} onCommit={v => set('holidays', v)} />
+        <Field k="holidays" label="الأجازات الرسمية" wide invalid={holidaysOutOfYear}>
+          <HolidayList value={inst.holidays} ctx={ctx} yearRange={tyRange} onCommit={v => set('holidays', v)} />
         </Field>
-        <Field k="weeksPerMonth" label="عدد أسابيع كل شهر" wide>
+        <Field k="weeksPerMonth" label="عدد أسابيع كل شهر" wide invalid={triedSubmit && badWeeksPerMonthSum}>
           <div className="two">
             <ListInput value={inst.weeksPerMonth} onCommit={v => set('weeksPerMonth', v)} sorted={false} />
-            <button type="button" className="mini" onClick={() => set('weeksPerMonth', weeksByCalendar(inst.startSaturday, inst.totalWeeks))}>حسب التقويم</button>
+            <button type="button" className="mini" disabled={!hasStart} onClick={() => hasStart && set('weeksPerMonth', weeksByCalendar(inst.startSaturday, inst.totalWeeks))}>حسب التقويم</button>
           </div>
-          <small>{names.map((n, i) => `${n}: ${inst.weeksPerMonth[i]}`).join(' · ')} — المجموع {inst.weeksPerMonth.reduce((a, b) => a + b, 0)}</small>
+          <small>{names.map((n, i) => `${n}: ${inst.weeksPerMonth[i]}`).join(' · ')} — المجموع {weeksPerMonthSum}</small>
+          {triedSubmit && badWeeksPerMonthSum && (
+            <small className="week-err" role="alert">
+              ⚠️ مجموع أسابيع الشهور ({toArabic(String(weeksPerMonthSum))}) لا يساوى عدد أسابيع الفترة ({toArabic(String(inst.totalWeeks))}) — اضغط «حسب التقويم» أو عدّل القيم.
+            </small>
+          )}
         </Field>
-        <Field k="marchSecurityByMonth" label="طابور السير + الأمن الحربى لكل شهر" wide>
+        <Field k="marchSecurityByMonth" label="طابور السير + الأمن الحربى لكل شهر" wide invalid={triedSubmit && missingMarchSec}>
           <table className="mini-table"><thead><tr><th>الشهر</th><th>طابور سير</th><th>أمن حربى</th></tr></thead>
             <tbody>{names.map((n, m) => (
               <tr key={m}><td>{n}</td>
@@ -636,6 +768,11 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
                     onCommit={n => { const a = inst.marchSecurityByMonth.map(p => [...p] as [number, number]); while (a.length <= m) a.push([0, 0]); a[m][j] = n; set('marchSecurityByMonth', a); }} /></td>
                 ))}
               </tr>))}</tbody></table>
+          {triedSubmit && missingMarchSec && (
+            <small className="week-err" role="alert">
+              ⚠️ يرجى إدخال ساعات طابور السير والأمن الحربى لجميع شهور الفترة.
+            </small>
+          )}
         </Field>
         <Field k="marchWeekOfMonth" label="أسبوع الشهر الذى يحمل يوم طابور السير" hint="رقم الأسبوع داخل الشهر (مثال: ٣)"><NumInput value={inst.marchWeekOfMonth} min={1} max={5} onCommit={n => set('marchWeekOfMonth', n)} label="أسبوع الشهر" /></Field>
         <Field k="marchWeekExceptions" label="شهور يختلف فيها أسبوع يوم طابور السير">
@@ -952,31 +1089,40 @@ export function Review({ inst, conf, confirmed, notes, rawText, onChange, onConf
         </details>
       )}
       <div className="sticky">
+        {showSubmitToast && missingFields.length > 0 && (
+          <div className="submit-err-box" role="alert">
+            <b>⚠️ يرجى استكمال الحقول المطلوبة قبل الحساب</b>
+          </div>
+        )}
         <button
           className="btn primary big"
-          disabled={!canAccept}
-          onClick={canAccept ? onAccept : undefined}
+          disabled={!liveValid}
+          onClick={handleConfirmClick}
           title={
-            !canAccept
-              ? !allWeeksOk
-                ? `يجب أن تكون جميع الأسابيع ضمن نطاق الفترة ${periodName} (${toArabic(String(periodMinWeek))} إلى ${toArabic(String(periodMaxWeek))})`
-                : !allPctsOk
-                  ? 'يجب أن يكون مجموع النسب ١٠٠% لتفعيل الحساب'
-                  : 'يجب تأكيد الحقول أولاً'
+            !liveValid
+              ? !allDatesOk
+                ? `توجد تواريخ خارج العام التدريبى (${tyLabelAr})`
+                : !allWeeksOk
+                  ? `يجب أن تكون جميع الأسابيع ضمن نطاق الفترة ${periodName} (${toArabic(String(periodMinWeek))} إلى ${toArabic(String(periodMaxWeek))})`
+                  : !allPctsOk
+                    ? 'يجب أن يكون مجموع النسب ١٠٠% لتفعيل الحساب'
+                    : 'يجب تأكيد الحقول أولاً'
               : undefined
           }
         >
           {pending.length > 0
             ? `أكّد ${toArabic(String(pending.length))} حقل أولاً`
-            : !allWeeksOk
-              ? `⚠️ لا يمكن الحساب — توجد أسابيع خارج نطاق الفترة ${periodName} (${toArabic(String(periodMinWeek))}–${toArabic(String(periodMaxWeek))}) فى: ${badWeekCards.map(c => c.label).join('، ')}`
-              : !allPctsOk
-                ? totalSubjectsSum !== 100
-                  ? `⚠️ لا يمكن الحساب — إجمالى النسب ${toArabic(String(totalSubjectsSum))}% (يجب أن يكون ١٠٠%)`
-                  : !mainOk
-                    ? `⚠️ لا يمكن الحساب — نسب الرئيسية ${toArabic(String(mainSubjectsSum))}% لا تطابق ${toArabic(String(targetMain))}%`
-                    : `⚠️ لا يمكن الحساب — نسب العامة ${toArabic(String(genSubjectsSum))}% لا تطابق ${toArabic(String(targetGen))}%`
-                : 'تأكيد التعليمات وحساب الأجندة'}
+            : !allDatesOk
+              ? `⚠️ لا يمكن الحساب — توجد تواريخ خارج العام التدريبى (${tyLabelAr}) فى: ${badDateCards.join('، ')}`
+              : !allWeeksOk
+                ? `⚠️ لا يمكن الحساب — توجد أسابيع خارج نطاق الفترة ${periodName} (${toArabic(String(periodMinWeek))}–${toArabic(String(periodMaxWeek))}) فى: ${badWeekCards.map(c => c.label).join('، ')}`
+                : !allPctsOk
+                  ? totalSubjectsSum !== 100
+                    ? `⚠️ لا يمكن الحساب — إجمالى النسب ${toArabic(String(totalSubjectsSum))}% (يجب أن يكون ١٠٠%)`
+                    : !mainOk
+                      ? `⚠️ لا يمكن الحساب — نسب الرئيسية ${toArabic(String(mainSubjectsSum))}% لا تطابق ${toArabic(String(targetMain))}%`
+                      : `⚠️ لا يمكن الحساب — نسب العامة ${toArabic(String(genSubjectsSum))}% لا تطابق ${toArabic(String(targetGen))}%`
+                  : 'تأكيد التعليمات وحساب الأجندة'}
         </button>
         {pending.length > 0 && (
           <button type="button" className="btn ghost big" onClick={() => pending.forEach(onConfirmField)}>

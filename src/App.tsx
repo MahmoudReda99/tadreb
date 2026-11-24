@@ -7,13 +7,13 @@ import { calculateWeekly } from './engine/weekly';
 import { FIXTURE_108, FIXTURE_111 } from './engine/fixtures';
 import { emptyInstructions } from './engine/instructions';
 import { monthNames } from './engine/dates';
-import { listProjects, removeProject, saveProject, type Project } from './db/database';
+import { clearProjects, listProjects, removeProject, saveProject, type Project } from './db/database';
 import { exportPdf } from './export/pdf';
 import { Review } from './ui/Review';
 import { Inspector } from './ui/Inspector';
 import { AgendaSheet, DistributionSheet, LinkingSheet, MonthDetailSheet, WeeklySheet, TrainingProgramSheet } from './ui/Sheets';
 import { ExportPages, type Model } from './ui/ExportPages';
-import { downloadMonthProgramsDocx, downloadProgramDocx } from './export/programDocx';
+import { downloadFullDocx } from './export/fullDocx';
 import type { Audit } from './engine/audit';
 import { ar } from './ui/format';
 
@@ -58,7 +58,35 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [pid, setPid] = useState<string>(() => uid());
   const [exporting, setExporting] = useState(false);
-  const online = useOnline();
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const [showMonthInLink, setShowMonthInLink] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try { return localStorage.getItem('tadreeb-theme') === 'dark' ? 'dark' : 'light'; } catch { return 'light'; }
+  });
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('tadreeb-theme', theme); } catch {}
+  }, [theme]);
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setExportMenuOpen(false); };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [exportMenuOpen]);
 
   const refresh = useCallback(() => { listProjects().then(setProjects).catch(() => setProjects([])); }, []);
   useEffect(refresh, [refresh]);
@@ -74,12 +102,13 @@ export default function App() {
       const monthExtracts = weekNums
         .map(w => calculateWeekly(agenda, link, w, inst))
         .filter((x): x is WeeklyExtract => x !== null);
-      return { inst, agenda, dist, link, ex: calculateWeekly(agenda, link, inst.selectedWeek, inst), monthExtracts };
+      return { inst, agenda, dist, link, ex: calculateWeekly(agenda, link, inst.selectedWeek, inst), monthExtracts, showMonthInLink };
     } catch (e) { console.error(e); return null; }
-  }, [inst, view]);
+  }, [inst, view, showMonthInLink]);
 
   function open(i: Instructions, id?: string) {
-    const names = monthNames(i.startSaturday, i.weeksPerMonth.length);
+    const hasStart = /^\d{4}-\d{2}-\d{2}$/.test(i.startSaturday);
+    const names = hasStart ? monthNames(i.startSaturday, i.weeksPerMonth.length) : [];
     const janIdx = names.indexOf('يناير');
     const next = id ? i : { ...i, selectedMonth: janIdx >= 0 ? janIdx : 0 };
     setInst(next); setConf({}); setNotes([]); setRawText(''); setConfirmed(new Set()); setPid(id ?? uid()); setView('review');
@@ -97,44 +126,181 @@ export default function App() {
     setExporting(true);
     try { await exportPdf(model); } catch (e) { setError(String(e)); } finally { setExporting(false); }
   }
+  async function doExportWord() {
+    if (!model) return;
+    setExporting(true);
+    try { await downloadFullDocx(model); } catch (e) { setError(String(e)); } finally { setExporting(false); }
+  }
 
-  const monthLabel = useMemo(() => monthNames(inst.startSaturday, inst.weeksPerMonth.length)[inst.selectedMonth] ?? '', [inst]);
+  const fmtDate = (ts: number) => {
+    const d = new Date(ts);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
 
   return (
-    <div className="app">
-      <header className="top">
-        <div className="brand"><span className="star">★</span><div><h1>منظومة أجندة التدريب القتالى</h1><small>تعمل بدون إنترنت {online ? '' : '· غير متصل'}</small></div></div>
-        {view !== 'upload' && <button className="btn ghost" onClick={() => setView('upload')}>الرئيسية</button>}
+    <div className="app-shell">
+      <header className="top-nav">
+        <div className="top-nav-inner">
+          <div className="brand" onClick={() => setView('upload')} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') setView('upload'); }}>
+            <span className="brand-emblem" aria-hidden="true">
+              <svg viewBox="0 0 40 40" width="36" height="36" fill="none">
+                <circle cx="20" cy="20" r="18" stroke="#c9a24b" strokeWidth="1.6" strokeDasharray="3 2" />
+                <polygon points="20,7 23.4,15.2 32.2,15.8 25.4,21.5 27.6,30.1 20,25.3 12.4,30.1 14.6,21.5 7.8,15.8 16.6,15.2" fill="#d4af52" />
+              </svg>
+            </span>
+            <div>
+              <h1>منظومة أجندة التدريب القتالى</h1>
+            </div>
+          </div>
+
+          <div className="top-nav-center">
+            <span className="offline-pill is-ok">
+              <span>تعمل بدون انترنت</span>
+              <span className="offline-check" aria-hidden="true">✔</span>
+            </span>
+          </div>
+
+          <div className="top-nav-actions">
+            {view !== 'upload' && (
+              <button type="button" className="nav-link-btn" onClick={() => setView('upload')}>
+                الرئيسية
+              </button>
+            )}
+            <button
+              type="button"
+              className="nav-link-btn"
+              onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
+              title={theme === 'dark' ? 'التبديل إلى الوضع المضئ' : 'التبديل إلى الوضع المظلم'}
+              aria-label={theme === 'dark' ? 'التبديل إلى الوضع المضئ' : 'التبديل إلى الوضع المظلم'}
+            >
+              <span aria-hidden="true">{theme === 'dark' ? '☀️' : '🌙'}</span>
+              <span>{theme === 'dark' ? 'الوضع المضئ' : 'الوضع المظلم'}</span>
+            </button>
+          </div>
+        </div>
       </header>
 
+      <div className="app">
       {view === 'upload' && (
-        <main className="panel">
-          <button type="button" className="enter-inst-cta" onClick={() => open(emptyInstructions())}>
-            <span className="enter-inst-icon" aria-hidden="true">✎</span>
-            <span className="enter-inst-text">
-              <b>إدخال التعليمات</b>
-              <small>إعداد دورة تدريبية جديدة وإدخال بيانات وتوجيهات التدريب</small>
-            </span>
-            <span className="enter-inst-arrow" aria-hidden="true">←</span>
-          </button>
+        <main className="home">
+          <section className="home-hero">
+            <div className="home-hero-overlay" />
+            <div className="home-hero-content">
+              <h2>مرحباً بك في منظومة أجندة التدريب القتالى</h2>
+              <p>أداة متكاملة لتخطيط وتنظيم فترة التدريب القتالى على مدار ٢٦ أسبوع</p>
+              <button type="button" className="hero-cta" onClick={() => open(emptyInstructions())}>
+                <span>إدخال التعليمات</span>
+                <span className="hero-cta-arrow" aria-hidden="true">◀</span>
+              </button>
+            </div>
+          </section>
+
+          <ol className="home-steps" aria-label="خطوات العمل">
+            <li className="step-item is-active">
+              <span className="step-num">١</span>
+              <span className="step-label">إدخال التعليمات</span>
+            </li>
+            <li className="step-line is-active" aria-hidden="true" />
+            <li className="step-item">
+              <span className="step-num">٢</span>
+              <span className="step-label">المراجعة والحساب</span>
+            </li>
+            <li className="step-line" aria-hidden="true" />
+            <li className="step-item">
+              <span className="step-num">٣</span>
+              <span className="step-label">التصدير والطباعة</span>
+            </li>
+          </ol>
 
           {error && <div className="err" role="alert">{error}</div>}
 
-          <div className="row samples-row">
-            <button className="btn" onClick={() => open(FIXTURE_108)}>نموذج الدورة 108</button>
-            <button className="btn" onClick={() => open(FIXTURE_111)}>نموذج الدورة 111</button>
-          </div>
-          <h2>المشروعات المحفوظة</h2>
-          {projects.length === 0 ? <p className="hint">لا توجد مشروعات محفوظة بعد.</p> : (
-            <ul className="projects">
-              {projects.map(p => (
-                <li key={p.id}>
-                  <button className="lnk" onClick={() => { open(p.instructions, p.id); }}>{p.name}<small>{new Date(p.updatedAt).toLocaleString('ar-EG')}</small></button>
-                  <button className="mini danger" onClick={async () => { await removeProject(p.id); refresh(); }}>حذف</button>
-                </li>
-              ))}
-            </ul>
-          )}
+          <section className="home-section">
+            <div className="home-section-head">
+              <span className="section-ico" aria-hidden="true">📋</span>
+              <h3>النماذج الجاهزة</h3>
+            </div>
+            <div className="templates-grid">
+              <div className="tpl-card">
+                <div className="tpl-info">
+                  <span className="tpl-doc-ico" aria-hidden="true">📄</span>
+                  <div>
+                    <b>نموذج الدورة 108</b>
+                    <small>نموذج فني معتمد للتدريب القتالى</small>
+                  </div>
+                </div>
+                <button type="button" className="btn-outline-gold" onClick={() => open(FIXTURE_108)}>
+                  <span aria-hidden="true">👁</span>
+                  <span>عرض النموذج</span>
+                </button>
+              </div>
+              <div className="tpl-card">
+                <div className="tpl-info">
+                  <span className="tpl-doc-ico" aria-hidden="true">📄</span>
+                  <div>
+                    <b>نموذج الدورة 111</b>
+                    <small>نموذج محدث لأجندة التدريب</small>
+                  </div>
+                </div>
+                <button type="button" className="btn-outline-gold" onClick={() => open(FIXTURE_111)}>
+                  <span aria-hidden="true">👁</span>
+                  <span>عرض النموذج</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="home-section">
+            <div className="home-section-head has-action">
+              <div className="home-section-title">
+                <span className="section-ico" aria-hidden="true">💾</span>
+                <h3>المشروعات المحفوظة</h3>
+              </div>
+              {projects.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-del-proj"
+                  onClick={() => setConfirmClearAll(true)}
+                >
+                  <span aria-hidden="true">🗑</span>
+                  <span>حذف الكل</span>
+                </button>
+              )}
+            </div>
+            {projects.length === 0 ? (
+              <p className="home-empty">لا توجد مشروعات محفوظة بعد — اضغط «إدخال التعليمات» للبدء أو اختر أحد النماذج الجاهزة.</p>
+            ) : (
+              <div className="saved-grid">
+                {projects.map((p, idx) => (
+                  <div className="saved-card" key={p.id}>
+                    <div className="saved-info">
+                      <span className="saved-emblem" aria-hidden="true">
+                        {idx % 3 === 0 ? '★' : idx % 3 === 1 ? '🛡' : '⚔'}
+                      </span>
+                      <div className="saved-meta">
+                        <b>{p.name}</b>
+                        <small>📅 آخر تحديث: {fmtDate(p.updatedAt)}</small>
+                      </div>
+                    </div>
+                    <div className="saved-actions">
+                      <button type="button" className="btn-open-proj" onClick={() => open(p.instructions, p.id)}>
+                        <span aria-hidden="true">📂</span>
+                        <span>فتح</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-del-proj"
+                        onClick={async () => { await removeProject(p.id); refresh(); }}
+                      >
+                        <span aria-hidden="true">🗑</span>
+                        <span>حذف</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </main>
       )}
 
@@ -147,38 +313,84 @@ export default function App() {
 
       {view === 'results' && (
         <main className="results">
-          <div className="tabs-bar">
-            <nav className="tabs" role="tablist">
-              {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
-            </nav>
-            <div className="tabs-export">
-              <button className="btn primary" onClick={doExport} disabled={exporting || !model}>{exporting ? 'جارى التصدير…' : 'تصدير PDF'}</button>
-              <button className="btn" onClick={() => window.print()}>طباعة</button>
+          <div className="results-sticky-head">
+            <div className="tabs-bar">
+              <nav className="tabs" role="tablist">
+                {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
+              </nav>
+              <div className="tabs-export">
+                <div className="export-menu-wrap" ref={exportMenuRef}>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    disabled={exporting || !model}
+                    aria-haspopup="menu"
+                    aria-expanded={exportMenuOpen}
+                    onClick={() => setExportMenuOpen(o => !o)}
+                  >
+                    <span>{exporting ? 'جارى التصدير…' : 'تصدير'}</span>
+                    {!exporting && <span className="export-caret" aria-hidden="true">▾</span>}
+                  </button>
+                  {exportMenuOpen && model && (
+                    <div className="export-menu" role="menu">
+                      <button
+                        type="button"
+                        className="export-menu-item"
+                        role="menuitem"
+                        onClick={() => {
+                          setExportMenuOpen(false);
+                          doExport();
+                        }}
+                      >
+                        <span className="export-item-ico" aria-hidden="true">📄</span>
+                        <span className="export-item-text">
+                          <b>تصدير كامل المنظومة (PDF)</b>
+                          <small>جميع الصفحات والجداول الرسمية</small>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="export-menu-item"
+                        role="menuitem"
+                        onClick={() => {
+                          setExportMenuOpen(false);
+                          doExportWord();
+                        }}
+                      >
+                        <span className="export-item-ico" aria-hidden="true">📝</span>
+                        <span className="export-item-text">
+                          <b>تصدير كامل المنظومة (Word .docx)</b>
+                          <small>جميع الصفحات والجداول قابلة للتعديل (أفقى + عمودى)</small>
+                        </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <button className="btn" onClick={() => window.print()}>طباعة</button>
+              </div>
             </div>
-          </div>
-          <div className="actions">
-            <button className="btn btn-edit-inst" onClick={() => setView('review')}>✎ تعديل التعليمات</button>
-            {(tab === 'month' || tab === 'week' || tab === 'program') && (
-              <label className="sel">
-                شهر التفصيل
-                <select value={inst.selectedMonth} onChange={e => setInst({ ...inst, selectedMonth: +e.target.value })}>
-                  {monthNames(inst.startSaturday, inst.weeksPerMonth.length).map((n, i) => <option key={i} value={i}>{n}</option>)}
-                </select>
-                {model && <span className="month-weeks-pill">{ar(model.monthExtracts.length)} أسابيع</span>}
-              </label>
-            )}
-            {tab === 'program' && model && (model.monthExtracts.length > 0 || model.ex) && (
-              <button
-                className="btn"
-                onClick={() =>
-                  model.monthExtracts.length > 0
-                    ? downloadMonthProgramsDocx(inst, model.monthExtracts, monthLabel, model.agenda, model.link)
-                    : downloadProgramDocx(inst, model.ex!, model.agenda, model.link)
-                }
-              >
-                تحميل Word 
-              </button>
-            )}
+            <div className="actions">
+              <button className="btn btn-edit-inst" onClick={() => setView('review')}>✎ تعديل التعليمات</button>
+              {tab === 'link' && (
+                <button
+                  type="button"
+                  className={`btn btn-toggle-detail ${showMonthInLink ? 'is-on' : ''}`}
+                  aria-pressed={showMonthInLink}
+                  onClick={() => setShowMonthInLink(v => !v)}
+                >
+                  {showMonthInLink ? '✔ تفصيل الشهر فى نفس الصفحة' : '+ تفصيل الشهر فى نفس الصفحة'}
+                </button>
+              )}
+              {(tab === 'month' || tab === 'week' || tab === 'program' || (tab === 'link' && showMonthInLink)) && (
+                <label className="sel">
+                  شهر التفصيل
+                  <select value={inst.selectedMonth} onChange={e => setInst({ ...inst, selectedMonth: +e.target.value })}>
+                    {monthNames(inst.startSaturday, inst.weeksPerMonth.length).map((n, i) => <option key={i} value={i}>{n}</option>)}
+                  </select>
+                  {model && <span className="month-weeks-pill">{ar(model.monthExtracts.length)} أسابيع</span>}
+                </label>
+              )}
+            </div>
           </div>
           {error && <div className="err" role="alert">{error}</div>}
           {!model ? <p className="err">تعذّر الحساب — راجع التعليمات.</p> : (
@@ -201,7 +413,7 @@ export default function App() {
               </div>
               {tab === 'agenda' && <Paper><AgendaSheet inst={inst} agenda={model.agenda} onInspect={setAudit} /></Paper>}
               {tab === 'dist' && <Paper><DistributionSheet inst={inst} agenda={model.agenda} dist={model.dist} onInspect={setAudit} /></Paper>}
-              {tab === 'link' && <Paper><LinkingSheet inst={inst} agenda={model.agenda} dist={model.dist} link={model.link} onInspect={setAudit} /></Paper>}
+              {tab === 'link' && <Paper><LinkingSheet inst={inst} agenda={model.agenda} dist={model.dist} link={model.link} showMonthDetail={showMonthInLink} onInspect={setAudit} /></Paper>}
               {tab === 'month' && <Paper><MonthDetailSheet inst={inst} agenda={model.agenda} dist={model.dist} link={model.link} onInspect={setAudit} /></Paper>}
               {tab === 'week' && (
                 <div className="weekly-stack">
@@ -243,22 +455,93 @@ export default function App() {
                   )}
                 </div>
               )}
-              <div className="print-root"><ExportPages m={model} /></div>
             </>
           )}
         </main>
       )}
       <Inspector audit={audit} onClose={() => setAudit(null)} />
+      </div>
+
+      <footer className="app-footer">
+        <div className="app-footer-inner">
+          <span className="footer-right">🔒 جميع البيانات محفوظة محلياً على جهازك فقط</span>
+          <span className="footer-left">
+            <button type="button" className="footer-about-btn" onClick={() => setShowAbout(true)}>
+              <span aria-hidden="true">📖</span>
+              <span>عن التطبيق</span>
+            </button>
+            <span aria-hidden="true">·</span>
+            <span>ⓘ الإصدار 1.0.0</span>
+          </span>
+        </div>
+      </footer>
+
+      {view === 'results' && model && (
+        <div className="print-root"><ExportPages m={model} /></div>
+      )}
+
+      {confirmClearAll && (
+        <div className="modal-backdrop" onClick={() => setConfirmClearAll(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="modal-head">
+              <div className="modal-head-title">
+                <span className="modal-icon warn" aria-hidden="true">⚠️</span>
+                <h3>تأكيد حذف جميع المشروعات</h3>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setConfirmClearAll(false)} aria-label="إغلاق">✕</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginTop: 0 }}>
+                هل أنت متأكد من حذف <strong>جميع المشروعات المحفوظة ({ar(projects.length)})</strong> نهائياً من هذا الجهاز؟
+              </p>
+              <p style={{ marginBottom: 0, color: 'var(--muted)', fontSize: '0.9rem' }}>
+                لا يمكن التراجع عن هذا الإجراء بعد التنفيذ.
+              </p>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn danger-btn"
+                onClick={async () => {
+                  await clearProjects();
+                  setConfirmClearAll(false);
+                  refresh();
+                }}
+              >
+                🗑 نعم، احذف الكل
+              </button>
+              <button type="button" className="btn ghost" onClick={() => setConfirmClearAll(false)}>إلغاء</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAbout && (
+        <div className="modal-backdrop" onClick={() => setShowAbout(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="modal-head">
+              <div className="modal-head-title">
+                <span className="modal-icon warn" aria-hidden="true">★</span>
+                <h3>عن منظومة أجندة التدريب القتالى</h3>
+              </div>
+              <button type="button" className="modal-close-btn" onClick={() => setShowAbout(false)} aria-label="إغلاق">✕</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginTop: 0 }}>
+                أداة متكاملة تعمل <strong>بدون إنترنت بالكامل</strong> لتخطيط وتنظيم فترة التدريب القتالى على مدار ٢٦ أسبوعاً، وحساب كافة الجداول الرسمية آلياً مع إمكانية التصدير إلى <strong>PDF</strong> و <strong>Word</strong> والطباعة المباشرة.
+              </p>
+              <ul style={{ margin: '10px 0 0', paddingInlineStart: '20px', lineHeight: 1.8 }}>
+                <li>أجندة التدريب القتالى الملونة وتوزيع الساعات على الموضوعات.</li>
+                <li>جدول الربط الشهرى وتفصيل أسابيع الشهر المختار.</li>
+                <li>المستخرج الأسبوعى وبرنامج تدريب السرية (نموذج ٥٤٦) لجميع أسابيع الشهر.</li>
+              </ul>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn primary" onClick={() => setShowAbout(false)}>حسناً</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
-
-function useOnline() {
-  const [on, setOn] = useState(navigator.onLine);
-  useEffect(() => {
-    const a = () => setOn(true); const b = () => setOn(false);
-    window.addEventListener('online', a); window.addEventListener('offline', b);
-    return () => { window.removeEventListener('online', a); window.removeEventListener('offline', b); };
-  }, []);
-  return on;
 }

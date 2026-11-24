@@ -1,5 +1,4 @@
 import type { Instructions, SubjectPcts } from './types';
-import { defaultWeeksPerMonth } from './dates';
 
 export const DEFAULT_PCTS: SubjectPcts = {
   mainPct: 72, tactics: 15, tech: 32, shooting: 10, fitness: 15,
@@ -8,10 +7,9 @@ export const DEFAULT_PCTS: SubjectPcts = {
 };
 
 export function emptyInstructions(): Instructions {
-  const start = '2023-12-30';
   return {
-    courseName: '', startSaturday: start, totalWeeks: 26, firstWeek: 1,
-    weeksPerMonth: defaultWeeksPerMonth(start, 26),
+    courseName: '', startSaturday: '', totalWeeks: 26, firstWeek: 1,
+    weeksPerMonth: [5, 4, 4, 5, 4, 4],
     prepWeeks: [], opsWeeks: [], reserveWeeks: [], campWeeks: [],
     ramadan: null, holidays: [],
     marchSecurityByMonth: [], marchWeekOfMonth: 4, marchWeekExceptions: {},
